@@ -40,8 +40,8 @@ def init_db():
     if not os.path.exists(UPLOAD_DIR):
         os.makedirs(UPLOAD_DIR)
         
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+    conn = get_db_connection()
+    c = get_cursor(conn)
     
     # Enable Foreign Keys
     c.execute("PRAGMA foreign_keys = ON;")
@@ -306,8 +306,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(b'Missing groupId')
                     return
                 
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 # Remove members first (or let CASCADE handle if set, but explicit is safer)
                 c.execute("DELETE FROM line_group_members WHERE group_id = ?", (group_id,))
                 c.execute("DELETE FROM line_groups WHERE id = ?", (group_id,))
@@ -338,9 +338,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 
                 print(f"[DEBUG] DELETE /api/analysis: analysis_id={analysis_id}, user_id={user_id}")
 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 
                 # Check user role
                 c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
@@ -406,9 +406,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 action_id = int(params.get('id', [0])[0])
                 user_id = int(params.get('userId', [0])[0])
 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 
                 c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
                 user = c.fetchone()
@@ -439,9 +439,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 data = json.loads(post_data)
                 user_id = data.get('userId')
                 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 
                 # Security: Only MASTER can wipe
                 c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
@@ -482,8 +482,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             data = json.loads(post_data)
             
             try:
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 c.execute("INSERT INTO line_groups (name, color) VALUES (?, ?)", (data['name'], data.get('color', '#3b82f6')))
                 conn.commit()
                 conn.close()
@@ -503,8 +503,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             data = json.loads(post_data)
             
             try:
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 
                 if data['action'] == 'add':
                     c.execute("INSERT OR IGNORE INTO line_group_members (group_id, line_code) VALUES (?, ?)", (data['groupId'], data['lineCode']))
@@ -528,9 +528,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             post_data = self.rfile.read(content_length).decode('utf-8')
             creds = json.loads(post_data)
             
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db_connection()
+            c = get_cursor(conn)
             conn.row_factory = sqlite3.Row
-            c = conn.cursor()
             c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (creds['username'], creds['password']))
             user = c.fetchone()
             conn.close()
@@ -592,8 +592,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     with open(target_path, 'wb') as f:
                         f.write(file_item['payload'])
                     
-                    conn = sqlite3.connect(DB_FILE)
-                    c = conn.cursor()
+                    conn = get_db_connection()
+                    c = get_cursor(conn)
                     c.execute("""
                         INSERT INTO line_analyses (line_code, description, filename, original_filename, author_id)
                         VALUES (?, ?, ?, ?, ?)
@@ -627,8 +627,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(400, "Action ID is required")
                     return
 
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 c.execute("UPDATE line_actions SET impact_conclusion = ? WHERE id = ?", (conclusion, action_id))
                 conn.commit()
                 conn.close()
@@ -656,8 +656,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(400, "Missing data")
                     return
                 
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 c.execute("""
                     INSERT INTO line_actions (line_code, comment, implementation_date, author_id)
                     VALUES (?, ?, ?, ?)
@@ -753,9 +753,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path == '/api/groups':
             try:
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 
                 # Fetch Groups
                 c.execute("SELECT * FROM line_groups")
@@ -788,9 +788,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(400, "Missing ID")
                     return
 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 c.execute("SELECT filename, original_filename FROM line_analyses WHERE id = ?", (analysis_id,))
                 row = c.fetchone()
                 conn.close()
@@ -822,9 +822,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 params = parse_qs(parsed_url.query)
                 line_code = params.get('line_code', [None])[0]
                 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 
                 if line_code:
                     c.execute("SELECT * FROM line_analyses WHERE line_code = ? ORDER BY created_at DESC", (line_code,))
@@ -850,9 +850,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 params = parse_qs(parsed_url.query)
                 line_code = params.get('line_code', [None])[0]
                 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 
                 if line_code:
                     c.execute("SELECT * FROM line_actions WHERE line_code = ? ORDER BY created_at DESC", (line_code,))
@@ -896,9 +896,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 # Range After: [base_date, base_date + window - 1]
                 after_start = base_date.strftime('%Y-%m-%d')
 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
 
                 def get_daily_stats(start_date, num_days):
                     # We want exactly num_days starting from start_date
@@ -941,8 +941,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path == '/api/available-lines':
             try:
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 c.execute("SELECT DISTINCT line_code FROM bus_lines ORDER BY line_code")
                 lines = [row[0] for row in c.fetchall()]
                 conn.close()
@@ -957,8 +957,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path.startswith('/api/debug-data'):
              try:
-                 conn = sqlite3.connect(DB_FILE)
-                 c = conn.cursor()
+                 conn = get_db_connection()
+                 c = get_cursor(conn)
                  c.execute("SELECT date, line_code FROM bus_lines LIMIT 20")
                  rows = c.fetchall()
                  conn.close()
@@ -992,9 +992,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 
                 print(f"DEBUG: Parsed Params -> Start: '{start_raw}', End: '{end_raw}', LineFilter: '{line_code_filter}'", file=sys.stderr)
 
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_db_connection()
+                c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c = conn.cursor()
                 
                 query = "SELECT * FROM bus_lines WHERE 1=1"
                 args = []
@@ -1205,8 +1205,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         print(f"Aggregation finished. {count} rows -> {len(aggregated)} stats. (Skipped 900: {skipped_900_count})")
 
         # Bulk Upsert
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
+        conn = get_db_connection()
+        c = get_cursor(conn)
         
         # Convert aggregated dict to list of tuples for executemany
         # (date, line_code, line_name, company, realized_for_update)
@@ -1391,8 +1391,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         
         print(f"Pred Agg Finished. {len(aggregated)} records starting DB sync...")
         
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
+        conn = get_db_connection()
+        c = get_cursor(conn)
         
         c.execute("BEGIN TRANSACTION;")
         try:
@@ -1428,8 +1428,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         try:
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
+            conn = get_db_connection()
+            c = get_cursor(conn)
             
             # 1. Get lines in group
             c.execute("SELECT line_code FROM line_group_members WHERE group_id = ?", (group_id,))
@@ -1511,9 +1511,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             start_filter = params.get('start', [None])[0]
             end_filter = params.get('end', [None])[0]
 
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db_connection()
+            c = get_cursor(conn)
             conn.row_factory = sqlite3.Row
-            c = conn.cursor()
             
             # 1. Get filtered actions
             query = "SELECT * FROM line_actions WHERE 1=1"
@@ -1603,9 +1603,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             shift_days = ((window + 6) // 7) * 7
             before_start_dt = base_date - timedelta(days=shift_days)
 
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db_connection()
+            c = get_cursor(conn)
             conn.row_factory = sqlite3.Row
-            c = conn.cursor()
 
             def get_system_daily_stats(start_dt, num_days):
                 data = []
