@@ -1218,7 +1218,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             for (date, line, comp), info in aggregated.items()
         ]
         
-        print(\"Writing to database...\")
+        print("Writing to database...")
         ph = db_helper.param_placeholder()
         try:
             c.executemany(f'''
