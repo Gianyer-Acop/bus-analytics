@@ -1218,12 +1218,12 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             for (date, line, comp), info in aggregated.items()
         ]
         
-        print("Writing to database...")
-        c.execute("BEGIN TRANSACTION;")
+        print(\"Writing to database...\")
+        ph = db_helper.param_placeholder()
         try:
-            c.executemany('''
+            c.executemany(f'''
                 INSERT INTO bus_lines (date, line_code, line_name, company, realized_passengers) 
-                VALUES (?, ?, ?, ?, ?)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
                 ON CONFLICT(date, line_code, company) 
                 DO UPDATE SET 
                     realized_passengers = excluded.realized_passengers
@@ -1394,7 +1394,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         conn = get_db_connection()
         c = get_cursor(conn)
         
-        c.execute("BEGIN TRANSACTION;")
+        ph = db_helper.param_placeholder()
         try:
             # Upsert Logic: 
             # If row exists, update predicted. If not, insert with realized=0
@@ -1403,9 +1403,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 for (date, line, comp), info in aggregated.items()
             ]
             
-            c.executemany('''
+            c.executemany(f'''
                 INSERT INTO bus_lines (date, line_code, line_name, company, predicted_passengers, realized_passengers) 
-                VALUES (?, ?, ?, ?, ?, 0)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 0)
                 ON CONFLICT(date, line_code, company) 
                 DO UPDATE SET 
                     predicted_passengers = excluded.predicted_passengers
