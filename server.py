@@ -1233,7 +1233,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 ON CONFLICT(date, line_code, company) 
                 DO UPDATE SET 
                     realized_passengers = excluded.realized_passengers
-            ''')), data_to_insert)
+            '''), data_to_insert)
             
             print(f"Executing batch insert/update for {len(data_to_insert)} records...")
             conn.commit()
@@ -1415,7 +1415,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 ON CONFLICT(date, line_code, company) 
                 DO UPDATE SET 
                     predicted_passengers = excluded.predicted_passengers
-            ''')), data_to_insert)
+            '''), data_to_insert)
             conn.commit()
             print(f"DB Updated (Predicted). {len(data_to_insert)} records processed.")
         except Exception as e:
