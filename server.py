@@ -36,6 +36,12 @@ get_db_connection = db_helper.get_db_connection
 get_cursor = db_helper.get_cursor
 USE_POSTGRES = db_helper.USE_POSTGRES
 
+def sql_query(query):
+    """Convert SQL query placeholders from ? to %s for PostgreSQL"""
+    if USE_POSTGRES:
+        return query.replace('?', '%s')
+    return query
+
 def init_db():
     if not os.path.exists(UPLOAD_DIR):
         os.makedirs(UPLOAD_DIR)
@@ -44,7 +50,7 @@ def init_db():
     c = get_cursor(conn)
     
     # Enable Foreign Keys
-    c.execute("PRAGMA foreign_keys = ON;")
+    c.execute(sql_query("PRAGMA foreign_keys = ON;"))
 
     # Users Table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -55,7 +61,7 @@ def init_db():
     )''')
 
     # Bus Lines Daily Data Table
-    c.execute('''CREATE TABLE IF NOT EXISTS bus_lines (
+    c.execute(sql_query('''CREATE TABLE IF NOT EXISTS bus_lines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,           -- YYYY-MM-DD
         line_code TEXT NOT NULL,      -- e.g. "8000-10"
@@ -64,10 +70,10 @@ def init_db():
         predicted_passengers REAL DEFAULT 0,
         realized_passengers REAL DEFAULT 0,
         UNIQUE(date, line_code, company)
-    )''')
+    )'''))
 
     # Occurrences / Analysis Table
-    c.execute('''CREATE TABLE IF NOT EXISTS occurrences (
+    c.execute(sql_query('''CREATE TABLE IF NOT EXISTS occurrences (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         bus_line_id INTEGER NOT NULL,
         description TEXT NOT NULL,
@@ -76,7 +82,7 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (bus_line_id) REFERENCES bus_lines(id),
         FOREIGN KEY (author_id) REFERENCES users(id)
-    )''')
+    )'''))
 
     # Line Groups (Blocks) Table
     c.execute('''CREATE TABLE IF NOT EXISTS line_groups (
@@ -86,15 +92,15 @@ def init_db():
     )''')
 
     # Line Group Members Table
-    c.execute('''CREATE TABLE IF NOT EXISTS line_group_members (
+    c.execute(sql_query('''CREATE TABLE IF NOT EXISTS line_group_members (
         group_id INTEGER NOT NULL,
         line_code TEXT NOT NULL UNIQUE, -- A line can only belong to ONE block
         FOREIGN KEY (group_id) REFERENCES line_groups(id) ON DELETE CASCADE,
         UNIQUE(group_id, line_code)
-    )''')
+    )'''))
 
     # Line Analyses / File Attachments Table
-    c.execute('''CREATE TABLE IF NOT EXISTS line_analyses (
+    c.execute(sql_query('''CREATE TABLE IF NOT EXISTS line_analyses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         line_code TEXT NOT NULL,
         description TEXT,
@@ -103,10 +109,10 @@ def init_db():
         author_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (author_id) REFERENCES users(id)
-    )''')
+    )'''))
 
     # Line Actions / Comments Table
-    c.execute('''CREATE TABLE IF NOT EXISTS line_actions (
+    c.execute(sql_query('''CREATE TABLE IF NOT EXISTS line_actions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         line_code TEXT NOT NULL,
         comment TEXT NOT NULL,
@@ -114,22 +120,22 @@ def init_db():
         author_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (author_id) REFERENCES users(id)
-    )''')
+    )'''))
 
     # Migration: Add impact_conclusion to line_actions
     try:
-        c.execute("PRAGMA table_info('line_actions');")
+        c.execute(sql_query("PRAGMA table_info('line_actions');"))
         cols = [col[1] for col in c.fetchall()]
         if 'impact_conclusion' not in cols:
             print("Adding impact_conclusion column to line_actions...")
-            c.execute("ALTER TABLE line_actions ADD COLUMN impact_conclusion TEXT;")
+            c.execute(sql_query("ALTER TABLE line_actions ADD COLUMN impact_conclusion TEXT;"))
     except Exception as e:
         print(f"Migration Error (line_actions): {e}")
 
     # Migration: Update UNIQUE constraint to include company
     try:
         # Check current unique constraint
-        c.execute("PRAGMA index_list('bus_lines');")
+        c.execute(sql_query("PRAGMA index_list('bus_lines');"))
         indices = c.fetchall()
         # Look for unique indices
         has_new_constraint = False
@@ -144,7 +150,7 @@ def init_db():
         # If not found, or if only (date, line_code) exists, we need to migrate
         if not has_new_constraint:
             print("Migrating bus_lines table for company granularity...")
-            c.execute("BEGIN TRANSACTION;")
+            c.execute(sql_query("BEGIN TRANSACTION;"))
             
             # 1. Create temporary table with new structure
             c.execute('''CREATE TABLE bus_lines_new (
@@ -159,7 +165,7 @@ def init_db():
             )''')
             
             # 2. Copy and Explode data
-            c.execute("SELECT id, date, line_code, line_name, company, predicted_passengers, realized_passengers FROM bus_lines")
+            c.execute(sql_query("SELECT id, date, line_code, line_name, company, predicted_passengers, realized_passengers FROM bus_lines"))
             old_rows = c.fetchall()
             
             for row in old_rows:
@@ -176,22 +182,22 @@ def init_db():
                 real_per = float(rreal) / n
                 
                 for i, name in enumerate(comps):
-                    c.execute('''INSERT INTO bus_lines_new (date, line_code, line_name, company, predicted_passengers, realized_passengers)
+                    c.execute(sql_query('''INSERT INTO bus_lines_new (date, line_code, line_name, company, predicted_passengers, realized_passengers)
                                  VALUES (?, ?, ?, ?, ?, ?)
                                  ON CONFLICT(date, line_code, company) DO UPDATE SET
                                     predicted_passengers = predicted_passengers + excluded.predicted_passengers,
-                                    realized_passengers = realized_passengers + excluded.realized_passengers''',
+                                    realized_passengers = realized_passengers + excluded.realized_passengers'''),
                               (rdate, rcode, rname, name, pred_per, real_per))
             
             # 3. Drop old table and rename new one
-            c.execute("DROP TABLE bus_lines;")
-            c.execute("ALTER TABLE bus_lines_new RENAME TO bus_lines;")
+            c.execute(sql_query("DROP TABLE bus_lines;"))
+            c.execute(sql_query("ALTER TABLE bus_lines_new RENAME TO bus_lines;"))
             
             conn.commit()
             print("Migration successful (Companies exploded).")
         else:
             # Migration 2: Ensure existing passenger columns are REAL for decimal precision
-            c.execute("PRAGMA table_info('bus_lines')")
+            c.execute(sql_query("PRAGMA table_info('bus_lines')"))
             columns_info = c.fetchall()
             needs_type_migration = False
             for col in columns_info:
@@ -201,7 +207,7 @@ def init_db():
             
             if needs_type_migration:
                 print("Migrating passenger columns to REAL type for precision...")
-                c.execute("ALTER TABLE bus_lines RENAME TO bus_lines_old;")
+                c.execute(sql_query("ALTER TABLE bus_lines RENAME TO bus_lines_old;"))
                 c.execute('''CREATE TABLE bus_lines (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     date TEXT NOT NULL,
@@ -212,9 +218,9 @@ def init_db():
                     realized_passengers REAL DEFAULT 0,
                     UNIQUE(date, line_code, company)
                 )''')
-                c.execute('''INSERT INTO bus_lines (id, date, line_code, line_name, company, predicted_passengers, realized_passengers)
-                             SELECT id, date, line_code, line_name, company, predicted_passengers, realized_passengers FROM bus_lines_old;''')
-                c.execute("DROP TABLE bus_lines_old;")
+                c.execute(sql_query('''INSERT INTO bus_lines (id, date, line_code, line_name, company, predicted_passengers, realized_passengers)
+                             SELECT id, date, line_code, line_name, company, predicted_passengers, realized_passengers FROM bus_lines_old;'''))
+                c.execute(sql_query("DROP TABLE bus_lines_old;"))
                 conn.commit()
                 print("Precision migration completed.")
                 
@@ -223,15 +229,15 @@ def init_db():
         print(f"Migration error: {e}")
 
     # Seed Master User
-    c.execute("SELECT * FROM users WHERE username = 'master'")
+    c.execute(sql_query("SELECT * FROM users WHERE username = 'master'"))
     if not c.fetchone():
         print("Seeding 'master' user...")
-        c.execute("INSERT INTO users (username, password, role) VALUES ('master', 'admin123', 'MASTER')")
-        c.execute("INSERT INTO users (username, password, role) VALUES ('user', 'user123', 'COMMON')")
+        c.execute(sql_query("INSERT INTO users (username, password, role) VALUES ('master', 'admin123', 'MASTER')"))
+        c.execute(sql_query("INSERT INTO users (username, password, role) VALUES ('user', 'user123', 'COMMON')"))
     else:
         # Force reset password to ensure access
         print("Ensuring 'master' password is 'admin123'...")
-        c.execute("UPDATE users SET password = 'admin123' WHERE username = 'master'")
+        c.execute(sql_query("UPDATE users SET password = 'admin123' WHERE username = 'master'"))
 
     conn.commit()
     conn.close()
@@ -309,8 +315,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn = get_db_connection()
                 c = get_cursor(conn)
                 # Remove members first (or let CASCADE handle if set, but explicit is safer)
-                c.execute("DELETE FROM line_group_members WHERE group_id = ?", (group_id,))
-                c.execute("DELETE FROM line_groups WHERE id = ?", (group_id,))
+                c.execute(sql_query("DELETE FROM line_group_members WHERE group_id = ?"), (group_id,))
+                c.execute(sql_query("DELETE FROM line_groups WHERE id = ?"), (group_id,))
                 conn.commit()
                 conn.close()
                 
@@ -343,7 +349,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn.row_factory = sqlite3.Row
                 
                 # Check user role
-                c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+                c.execute(sql_query("SELECT role FROM users WHERE id = ?"), (user_id,))
                 user = c.fetchone()
                 if not user:
                     print(f"[DEBUG] User {user_id} not found")
@@ -362,7 +368,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 # Get filename to delete from disk
-                c.execute("SELECT filename FROM line_analyses WHERE id = ?", (analysis_id,))
+                c.execute(sql_query("SELECT filename FROM line_analyses WHERE id = ?"), (analysis_id,))
                 row = c.fetchone()
                 if row:
                     file_name = row['filename']
@@ -377,7 +383,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception as e:
                         print(f"[DEBUG] Error removing file: {e}")
                     
-                    c.execute("DELETE FROM line_analyses WHERE id = ?", (analysis_id,))
+                    c.execute(sql_query("DELETE FROM line_analyses WHERE id = ?"), (analysis_id,))
                     conn.commit()
                     print(f"[DEBUG] Record deleted from DB")
                     conn.close()
@@ -410,7 +416,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
                 
-                c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+                c.execute(sql_query("SELECT role FROM users WHERE id = ?"), (user_id,))
                 user = c.fetchone()
                 if not user or user['role'] != 'MASTER':
                     self.send_response(403)
@@ -419,7 +425,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     conn.close()
                     return
 
-                c.execute("DELETE FROM line_actions WHERE id = ?", (action_id,))
+                c.execute(sql_query("DELETE FROM line_actions WHERE id = ?"), (action_id,))
                 conn.commit()
                 conn.close()
                 self.send_response(200)
@@ -444,7 +450,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn.row_factory = sqlite3.Row
                 
                 # Security: Only MASTER can wipe
-                c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+                c.execute(sql_query("SELECT role FROM users WHERE id = ?"), (user_id,))
                 user = c.fetchone()
                 print(f"DEBUG: User Role Check for ID {user_id}: {dict(user) if user else 'None'}")
                 if not user or user['role'] != 'MASTER':
@@ -453,9 +459,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 # Wipe performance data
-                c.execute("DELETE FROM bus_lines")
+                c.execute(sql_query("DELETE FROM bus_lines"))
                 # Also wipe daily occurrences as they are tied to bus_line_id
-                c.execute("DELETE FROM occurrences")
+                c.execute(sql_query("DELETE FROM occurrences"))
                 conn.commit()
                 conn.close()
                 
@@ -484,7 +490,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 conn = get_db_connection()
                 c = get_cursor(conn)
-                c.execute("INSERT INTO line_groups (name, color) VALUES (?, ?)", (data['name'], data.get('color', '#3b82f6')))
+                c.execute(sql_query("INSERT INTO line_groups (name, color) VALUES (?, ?)"), (data['name'], data.get('color', '#3b82f6')))
                 conn.commit()
                 conn.close()
                 
@@ -507,9 +513,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 c = get_cursor(conn)
                 
                 if data['action'] == 'add':
-                    c.execute("INSERT OR IGNORE INTO line_group_members (group_id, line_code) VALUES (?, ?)", (data['groupId'], data['lineCode']))
+                    c.execute(sql_query("INSERT OR IGNORE INTO line_group_members (group_id, line_code) VALUES (?, ?)"), (data['groupId'], data['lineCode']))
                 elif data['action'] == 'remove':
-                    c.execute("DELETE FROM line_group_members WHERE group_id = ? AND line_code = ?", (data['groupId'], data['lineCode']))
+                    c.execute(sql_query("DELETE FROM line_group_members WHERE group_id = ? AND line_code = ?"), (data['groupId'], data['lineCode']))
                     
                 conn.commit()
                 conn.close()
@@ -531,7 +537,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             conn = get_db_connection()
             c = get_cursor(conn)
             conn.row_factory = sqlite3.Row
-            c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (creds['username'], creds['password']))
+            c.execute(sql_query("SELECT * FROM users WHERE username = ? AND password = ?"), (creds['username'], creds['password']))
             user = c.fetchone()
             conn.close()
             
@@ -594,10 +600,10 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     
                     conn = get_db_connection()
                     c = get_cursor(conn)
-                    c.execute("""
+                    c.execute(sql_query("""
                         INSERT INTO line_analyses (line_code, description, filename, original_filename, author_id)
                         VALUES (?, ?, ?, ?, ?)
-                    """, (line_code, description, internal_name, orig_name, author_id))
+                    """), (line_code, description, internal_name, orig_name, author_id))
                     conn.commit()
                     conn.close()
                     
@@ -629,7 +635,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 conn = get_db_connection()
                 c = get_cursor(conn)
-                c.execute("UPDATE line_actions SET impact_conclusion = ? WHERE id = ?", (conclusion, action_id))
+                c.execute(sql_query("UPDATE line_actions SET impact_conclusion = ? WHERE id = ?"), (conclusion, action_id))
                 conn.commit()
                 conn.close()
                 
@@ -658,10 +664,10 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 
                 conn = get_db_connection()
                 c = get_cursor(conn)
-                c.execute("""
+                c.execute(sql_query("""
                     INSERT INTO line_actions (line_code, comment, implementation_date, author_id)
                     VALUES (?, ?, ?, ?)
-                """, (line_code, comment, imp_date, author_id))
+                """), (line_code, comment, imp_date, author_id))
                 conn.commit()
                 conn.close()
                 
@@ -758,12 +764,12 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn.row_factory = sqlite3.Row
                 
                 # Fetch Groups
-                c.execute("SELECT * FROM line_groups")
+                c.execute(sql_query("SELECT * FROM line_groups"))
                 groups = [dict(row) for row in c.fetchall()]
                 
                 # Fetch Members
                 for g in groups:
-                    c.execute("SELECT line_code FROM line_group_members WHERE group_id = ?", (g['id'],))
+                    c.execute(sql_query("SELECT line_code FROM line_group_members WHERE group_id = ?"), (g['id'],))
                     g['lines'] = [row['line_code'] for row in c.fetchall()]
                 
                 conn.close()
@@ -791,7 +797,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn = get_db_connection()
                 c = get_cursor(conn)
                 conn.row_factory = sqlite3.Row
-                c.execute("SELECT filename, original_filename FROM line_analyses WHERE id = ?", (analysis_id,))
+                c.execute(sql_query("SELECT filename, original_filename FROM line_analyses WHERE id = ?"), (analysis_id,))
                 row = c.fetchone()
                 conn.close()
 
@@ -827,9 +833,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn.row_factory = sqlite3.Row
                 
                 if line_code:
-                    c.execute("SELECT * FROM line_analyses WHERE line_code = ? ORDER BY created_at DESC", (line_code,))
+                    c.execute(sql_query("SELECT * FROM line_analyses WHERE line_code = ? ORDER BY created_at DESC"), (line_code,))
                 else:
-                    c.execute("SELECT * FROM line_analyses ORDER BY created_at DESC")
+                    c.execute(sql_query("SELECT * FROM line_analyses ORDER BY created_at DESC"))
                 
                 rows = c.fetchall()
                 conn.close()
@@ -855,9 +861,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn.row_factory = sqlite3.Row
                 
                 if line_code:
-                    c.execute("SELECT * FROM line_actions WHERE line_code = ? ORDER BY created_at DESC", (line_code,))
+                    c.execute(sql_query("SELECT * FROM line_actions WHERE line_code = ? ORDER BY created_at DESC"), (line_code,))
                 else:
-                    c.execute("SELECT * FROM line_actions ORDER BY created_at DESC")
+                    c.execute(sql_query("SELECT * FROM line_actions ORDER BY created_at DESC"))
                 
                 rows = c.fetchall()
                 conn.close()
@@ -906,7 +912,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     
                     data = []
                     for dt in dates:
-                        c.execute("SELECT realized_passengers FROM bus_lines WHERE line_code = ? AND date = ?", (line_code, dt))
+                        c.execute(sql_query("SELECT realized_passengers FROM bus_lines WHERE line_code = ? AND date = ?"), (line_code, dt))
                         row = c.fetchone()
                         val = row['realized_passengers'] if row else 0
                         data.append({"date": dt, "val": val})
@@ -943,7 +949,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 conn = get_db_connection()
                 c = get_cursor(conn)
-                c.execute("SELECT DISTINCT line_code FROM bus_lines ORDER BY line_code")
+                c.execute(sql_query("SELECT DISTINCT line_code FROM bus_lines ORDER BY line_code"))
                 lines = [row[0] for row in c.fetchall()]
                 conn.close()
                 self.send_response(200)
@@ -959,7 +965,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
              try:
                  conn = get_db_connection()
                  c = get_cursor(conn)
-                 c.execute("SELECT date, line_code FROM bus_lines LIMIT 20")
+                 c.execute(sql_query("SELECT date, line_code FROM bus_lines LIMIT 20"))
                  rows = c.fetchall()
                  conn.close()
                  
@@ -1219,7 +1225,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         ]
         
         print("Writing to database...")
-        c.execute("BEGIN TRANSACTION;")
+        c.execute(sql_query("BEGIN TRANSACTION;"))
         try:
             c.executemany('''
                 INSERT INTO bus_lines (date, line_code, line_name, company, realized_passengers) 
@@ -1394,7 +1400,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         conn = get_db_connection()
         c = get_cursor(conn)
         
-        c.execute("BEGIN TRANSACTION;")
+        c.execute(sql_query("BEGIN TRANSACTION;"))
         try:
             # Upsert Logic: 
             # If row exists, update predicted. If not, insert with realized=0
@@ -1432,7 +1438,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             c = get_cursor(conn)
             
             # 1. Get lines in group
-            c.execute("SELECT line_code FROM line_group_members WHERE group_id = ?", (group_id,))
+            c.execute(sql_query("SELECT line_code FROM line_group_members WHERE group_id = ?"), (group_id,))
             lines = [r[0] for r in c.fetchall()]
             
             if not lines:
@@ -1454,7 +1460,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             rows = c.fetchall()
             
             # Get group name for filename
-            c.execute("SELECT name FROM line_groups WHERE id = ?", (group_id,))
+            c.execute(sql_query("SELECT name FROM line_groups WHERE id = ?"), (group_id,))
             group_name_row = c.fetchone()
             group_name = group_name_row[0] if group_name_row else "bloco"
             
@@ -1546,7 +1552,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     vals = []
                     for i in range(window):
                         dt = (start_dt + timedelta(days=i)).strftime('%Y-%m-%d')
-                        c.execute("SELECT realized_passengers FROM bus_lines WHERE line_code = ? AND date = ?", (line_code, dt))
+                        c.execute(sql_query("SELECT realized_passengers FROM bus_lines WHERE line_code = ? AND date = ?"), (line_code, dt))
                         row = c.fetchone()
                         if row: vals.append(row['realized_passengers'])
                     return sum(vals)/len(vals) if vals else 0
@@ -1612,7 +1618,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 for i in range(num_days):
                     dt = (start_dt + timedelta(days=i)).strftime('%Y-%m-%d')
                     # Sum realized passengers for ALL lines on this date
-                    c.execute("SELECT SUM(realized_passengers) as total FROM bus_lines WHERE date = ?", (dt,))
+                    c.execute(sql_query("SELECT SUM(realized_passengers) as total FROM bus_lines WHERE date = ?"), (dt,))
                     row = c.fetchone()
                     val = row['total'] if row and row['total'] else 0
                     data.append({"date": dt, "val": val})
