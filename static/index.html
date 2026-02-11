@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analise de Linhas | Bus Analytics</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js for Impact Analysis -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Using Google Fonts for Premium Feel -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div id="app">
+        <!-- Notification Area -->
+        <div id="notification-container"></div>
+
+        <!-- Login View -->
+        <section id="login-view" class="active">
+            <div class="glass-panel login-box">
+                <h1>Bus Analytics</h1>
+                <p>Acesse para iniciar os registros</p>
+                <form id="login-form">
+                    <div class="input-group">
+                        <label>Usuário</label>
+                        <input type="text" id="username" placeholder="Seu usuário" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Senha</label>
+                        <input type="password" id="password" placeholder="Sua senha" required>
+                    </div>
+                    <button type="submit" class="btn primary">Entrar</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Dashboard View -->
+        <section id="dashboard-view" class="hidden">
+            <header class="top-nav">
+                <div class="logo">Bus Analytics</div>
+                <nav class="main-tabs">
+                    <button id="tab-macro" class="main-tab active" onclick="switchMainTab('macro')">PANORAMA
+                        GERAL</button>
+                    <button id="tab-operacional" class="main-tab" onclick="switchMainTab('operacional')">VISÃO
+                        OPERACIONAL</button>
+                    <button id="tab-impacto" class="main-tab" onclick="switchMainTab('impacto')">IMPACTO DAS
+                        AÇÕES</button>
+                </nav>
+                <div class="user-info">
+                    <span id="display-username">Usuário</span>
+                    <button id="logout-btn" class="btn text-only">Sair</button>
+                </div>
+            </header>
+
+            <main class="content">
+                <div class="toolbar">
+                    <div class="toolbar-header">
+                        <h2 id="dashboard-title">Panorama Macro</h2>
+                        <button id="btn-back-groups" class="back-btn-business hidden">
+                            <span>VOLTAR PARA LISTA DE BLOCOS</span>
+                        </button>
+                        <button id="btn-export-group" class="btn success hidden"
+                            style="margin-left: 10px; padding: 10px 15px; font-size: 0.8rem;">
+                            <span>EXPORTAR EXCEL</span>
+                        </button>
+                    </div>
+
+                    <div class="actions">
+                        <!-- Date Filter -->
+                        <div class="filter-group glass-panel"
+                            style="padding: 5px 15px; display: flex; gap: 10px; align-items: center;">
+                            <label style="font-size: 0.8rem; color: var(--text-muted);">Período:</label>
+                            <input type="date" id="start-date" class="input-date">
+                            <span style="color: var(--text-muted)">até</span>
+                            <input type="date" id="end-date" class="input-date">
+                            <button id="btn-filter" class="btn text-only" title="Atualizar">ATUALIZAR</button>
+                        </div>
+
+                        <!-- Only visible to Master -->
+                        <div class="master-only hidden" style="display:flex; gap:10px;">
+                            <label for="csv-upload" class="btn secondary">
+                                IMPORTAR REALIZADO (CSV)
+                            </label>
+                            <input type="file" id="csv-upload" accept=".csv" hidden>
+
+                            <label for="csv-predict" class="btn secondary">
+                                IMPORTAR PREVISTO (CSV)
+                            </label>
+                            <input type="file" id="csv-predict" accept=".csv" hidden>
+
+                            <button id="btn-manage-groups" class="btn accent">
+                                GERENCIAR BLOCOS
+                            </button>
+
+                            <button id="btn-clear-data" class="btn delete" onclick="handleClearData()"
+                                style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">
+                                LIMPAR DADOS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Macro Dashboard Content -->
+                <div id="macro-tab-content" class="tab-content">
+                    <div class="macro-kpi-grid">
+                        <div class="glass-panel kpi-card">
+                            <span class="label">PASSAGEIROS PREVISTOS</span>
+                            <span id="macro-total-predicted" class="value">-</span>
+                        </div>
+                        <div class="glass-panel kpi-card success">
+                            <span class="label">PASSAGEIROS REALIZADOS</span>
+                            <span id="macro-total-realized" class="value">-</span>
+                        </div>
+                        <div class="glass-panel kpi-card">
+                            <span class="label">DIFERENÇA TOTAL</span>
+                            <span id="macro-total-diff" class="value">-</span>
+                        </div>
+                        <div class="glass-panel kpi-card highlight">
+                            <span class="label">PERFORMANCE GERAL</span>
+                            <span id="macro-overall-perf" class="value">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Performance Chart -->
+                    <div class="glass-panel" style="margin-bottom: 30px; padding: 20px;">
+                        <h3
+                            style="margin-bottom: 15px; font-size: 0.9rem; color: var(--text-muted); letter-spacing: 1px;">
+                            EVOLUÇÃO DO DESEMPENHO (TOTAL)</h3>
+                        <div id="macro-performance-chart-container" style="height: 300px; position: relative;">
+                            <canvas id="macro-performance-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="section-header" style="margin-top: 30px;">
+                        <h3>DESEMPENHO POR EMPRESA</h3>
+                    </div>
+                    <div id="macro-company-grid" class="macro-company-grid">
+                        <!-- Cards injected by JS -->
+                    </div>
+
+                    <!-- Company Detail View (Hidden by default) -->
+                    <div id="macro-company-detail" class="hidden">
+                        <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 15px;">
+                            <button class="btn secondary" onclick="switchMainTab('macro')">
+                                <i class="fas fa-arrow-left"></i> Voltar
+                            </button>
+                            <h2 id="macro-detail-company-name">Detalhes da Empresa</h2>
+                        </div>
+
+                        <div class="glass-panel table-container">
+                            <table id="macro-detail-table">
+                                <thead>
+                                    <tr>
+                                        <th>CÓDIGO</th>
+                                        <th>LINHA</th>
+                                        <th>PREVISTO</th>
+                                        <th>REALIZADO</th>
+                                        <th>DIFERENÇA</th>
+                                        <th>% PERF.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows injected by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Operational Dashboard Content (Existing) -->
+                <div id="operational-tab-content" class="tab-content hidden">
+                    <!-- Main Dashboard Content (Split View) -->
+                    <div id="dashboard-main-content">
+                        <!-- Groups Grid View -->
+                        <div id="groups-container" class="groups-grid">
+                            <!-- Cards injected by JS -->
+                        </div>
+
+                        <!-- Summary Panel -->
+                        <aside id="summary-panel" class="summary-section">
+                            <div class="glass-panel summary-card">
+                                <h3>5 MELHORES LINHAS</h3>
+                                <div class="summary-table-wrap">
+                                    <table id="top-lines-table" class="compact-table">
+                                        <thead>
+                                            <tr>
+                                                <th>LINHA</th>
+                                                <th>BLOCO</th>
+                                                <th>PREVISTO</th>
+                                                <th>REALIZADO</th>
+                                                <th>DIFERENÇA</th>
+                                                <th>%</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="glass-panel summary-card">
+                                <h3>5 PIORES LINHAS</h3>
+                                <div class="summary-table-wrap">
+                                    <table id="bottom-lines-table" class="compact-table">
+                                        <thead>
+                                            <tr>
+                                                <th>LINHA</th>
+                                                <th>BLOCO</th>
+                                                <th>PREVISTO</th>
+                                                <th>REALIZADO</th>
+                                                <th>DIFERENÇA</th>
+                                                <th>%</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+
+                    <!-- Table View (Hidden initially if groups exist) -->
+                    <div id="data-table-container" class="glass-panel table-container hidden">
+                        <table id="lines-table">
+                            <thead>
+                                <tr>
+                                    <th>Linha</th>
+                                    <th>Empresa</th>
+                                    <th>Previsto</th>
+                                    <th>Realizado</th>
+                                    <th>Dif.</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Rows injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Action Impact Report Content -->
+                <div id="impact-tab-content" class="tab-content hidden">
+                    <!-- Impact Specific Filter -->
+                    <div class="glass-panel"
+                        style="margin-bottom: 20px; padding: 15px; display: flex; gap: 15px; align-items: center; justify-content: center;">
+                        <label style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">FILTRAR DATA DAS
+                            AÇÕES:</label>
+                        <input type="date" id="impact-start-date" class="input-date">
+                        <span style="color: var(--text-muted)">até</span>
+                        <input type="date" id="impact-end-date" class="input-date">
+                        <button id="btn-impact-filter" class="btn primary" onclick="renderImpactPage()"
+                            style="padding: 8px 20px;">ATUALIZAR RELATÓRIO</button>
+                    </div>
+
+                    <div class="macro-kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+                        <div class="glass-panel kpi-card">
+                            <span class="label">TOTAL DE AÇÕES</span>
+                            <span id="impact-total-actions" class="value">-</span>
+                        </div>
+                        <div class="glass-panel kpi-card success">
+                            <span class="label">AÇÕES POSITIVAS</span>
+                            <span id="impact-positive-actions" class="value">-</span>
+                        </div>
+                        <div class="glass-panel kpi-card highlight">
+                            <span class="label">MÉDIA DE MELHORIA</span>
+                            <span id="impact-avg-improvement" class="value">-</span>
+                        </div>
+                        <div class="glass-panel kpi-card" id="card-systemic-impact">
+                            <span class="label">IMPACTO TOTAL (PASSAG.)</span>
+                            <span id="impact-total-systemic" class="value">-</span>
+                        </div>
+                    </div>
+
+                    <div class="section-header" style="margin-top: 30px;">
+                        <h3>HISTÓRICO DE IMPACTO POR AÇÃO</h3>
+                    </div>
+
+                    <div class="glass-panel table-container">
+                        <table id="impact-report-table">
+                            <thead>
+                                <tr>
+                                    <th>LINHA</th>
+                                    <th>DATA</th>
+                                    <th>AÇÃO TOMADA</th>
+                                    <th>MÉDIA (7D ANTES)</th>
+                                    <th>MÉDIA (7D DEPOIS)</th>
+                                    <th>IMPACTO</th>
+                                    <th>STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Rows injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </section>
+    </div>
+    <script type="module" src="app.js"></script>
+    <!-- Group Management Modal -->
+    <div id="group-modal" class="modal hidden">
+        <div class="glass-panel modal-content large">
+            <header class="modal-header">
+                <h2>Gerenciar Blocos de Linhas</h2>
+                <button class="close-modal">&times;</button>
+            </header>
+
+            <div class="modal-body">
+                <!-- VIEW 1: List of Groups -->
+                <div id="group-list-view" class="group-manager-view">
+                    <div class="input-row" style="margin-bottom: 20px;">
+                        <input type="text" id="new-group-name" placeholder="Nome do Novo Bloco" class="input-std">
+                        <button id="btn-create-group" class="btn primary">Criar Novo Bloco</button>
+                    </div>
+                    <ul id="manage-groups-list" class="styled-list">
+                        <!-- Groups injected here with an "Editar Linhas" button -->
+                    </ul>
+                </div>
+
+                <!-- VIEW 2: Line Selection Grid -->
+                <div id="line-selection-view" class="group-manager-view hidden">
+                    <div class="view-header">
+                        <button id="btn-back-to-list" class="btn text-only">VOLTAR</button>
+                        <h3 id="editing-group-name">Editando Bloco</h3>
+                        <div class="search-wrap">
+                            <input type="text" id="search-selection-lines" placeholder="Procurar linha..."
+                                class="input-std">
+                        </div>
+                    </div>
+
+                    <div class="selection-grid-container">
+                        <div id="selection-grid" class="selection-grid">
+                            <!-- Checkbox items injected here -->
+                        </div>
+                    </div>
+
+                    <div class="view-footer">
+                        <button id="btn-selection-done" class="btn primary">SALVAR E CONCLUIR</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unified Modal (Analysis & Actions) -->
+    <div id="unified-modal" class="modal hidden">
+        <div class="modal-content large" style="max-width: 1150px; width: 95%;">
+            <div class="modal-header">
+                <div class="modal-nav-tabs">
+                    <button class="nav-tab active" onclick="switchModalView('history')"
+                        id="tab-btn-history">HISTÓRICO</button>
+                    <button class="nav-tab" onclick="switchModalView('detail')"
+                        id="tab-btn-detail">CARREGAMENTO</button>
+                    <button class="nav-tab hidden" onclick="switchModalView('impact')"
+                        id="tab-btn-impact">IMPACTO</button>
+                    <button class="nav-tab hidden" onclick="switchModalView('comparative')"
+                        id="tab-btn-comparative">COMPARATIVO</button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <h3 style="margin: 0; font-size: 1rem;">Linha: <span id="unified-line-code"
+                            class="primary-text-accent">-</span></h3>
+                    <!-- Added ID for compatibility with older JS references if any -->
+                    <span id="impact-line-title" class="hidden"></span>
+                    <button class="close-modal" onclick="closeUnifiedModal()">&times;</button>
+                </div>
+            </div>
+
+            <!-- View 1: History (Documents & Actions) -->
+            <div id="modal-history-view" class="modal-view-container">
+                <div class="modal-body unified-split-body">
+                    <!-- LEFT COLUMN: Analysis (Files) -->
+                    <div class="unified-column border-right">
+                        <section class="analysis-section-box">
+                            <header class="section-label">ANÁLISE E DOCUMENTOS</header>
+                            <div class="analysis-input-stack">
+                                <textarea id="analysis-desc" placeholder="Observações da análise..."
+                                    class="input-std main-textarea" style="min-height: 60px;"></textarea>
+                                <div class="upload-controls-wrapper">
+                                    <div class="file-input-container" style="flex: 1;">
+                                        <label for="analysis-file" class="file-drop-zone">
+                                            <span class="file-label-text">Anexar Arquivo</span>
+                                            <input type="file" id="analysis-file" accept=".pdf,.doc,.docx,.xls,.xlsx">
+                                        </label>
+                                    </div>
+                                    <button id="btn-upload-analysis" class="btn primary-glow">SALVAR ARQUIVO</button>
+                                </div>
+                            </div>
+                        </section>
+                        <div class="separator-glow"></div>
+                        <section class="analysis-section-box">
+                            <header class="section-label">HISTÓRICO DE DOCUMENTOS</header>
+                            <div id="analysis-list" class="styled-list history-scroll-area">
+                                <div class="placeholder-text">Nenhum documento anexado.</div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- RIGHT COLUMN: Actions (Comments) -->
+                    <div class="unified-column">
+                        <section class="analysis-section-box">
+                            <header class="section-label">PLANO DE AÇÃO / COMENTÁRIOS</header>
+                            <div class="analysis-input-stack">
+                                <textarea id="action-comment" placeholder="Descreva a ação ou mudança necessária..."
+                                    class="input-std main-textarea" style="min-height: 60px;"></textarea>
+                                <div class="upload-controls-wrapper">
+                                    <div style="display: flex; flex-direction: column; gap: 5px; flex: 1;">
+                                        <label style="font-size: 0.7rem; color: var(--text-muted);">Data de
+                                            Implementação:</label>
+                                        <input type="date" id="action-date" class="input-date" style="width: 100%;">
+                                    </div>
+                                    <button id="btn-save-action" class="btn primary-glow">SALVAR AÇÃO</button>
+                                </div>
+                            </div>
+                        </section>
+                        <div class="separator-glow"></div>
+                        <section class="analysis-section-box">
+                            <header class="section-label">HISTÓRICO DE MUDANÇAS E AÇÕES</header>
+                            <div id="actions-list" class="styled-list history-scroll-area">
+                                <div class="placeholder-text">Nenhum comentário registrado.</div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+
+            <div id="modal-impact-view" class="hidden modal-view-container" style="position: relative;">
+                <!-- Loading Overlay -->
+                <div id="impact-loading" class="loading-overlay hidden">
+                    <div class="spinner"></div>
+                    <div class="loading-text">CARREGANDO ANÁLISE...</div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="impact-empty-state" class="hidden"
+                    style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 40px; text-align: center;">
+                    <div class="glass-panel" style="padding: 40px; max-width: 400px; width: 100%;">
+                        <div style="font-size: 3rem; margin-bottom: 20px; opacity: 0.3;">📋</div>
+                        <h3 style="color: var(--text-main); margin-bottom: 10px;">Nenhuma Ação</h3>
+                        <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.5;">Não existem ações ou
+                            mudanças registradas para esta linha no período selecionado.</p>
+                        <button class="btn accent" style="margin-top: 25px; width: 100%;"
+                            onclick="switchModalView('history')">ADICIONAR AÇÃO NO HISTÓRICO</button>
+                    </div>
+                </div>
+
+                <div class="impact-modal-body"
+                    style="padding: 15px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; height: 100%;">
+                    <!-- Top Row: Action Info & Date Controls -->
+                    <div class="impact-header-row glass-panel"
+                        style="padding: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div style="flex: 1;">
+                            <label
+                                style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Ação
+                                Monitorada</label>
+                            <select id="impact-action-select" class="input-std" style="width: 100%; margin-top: 5px;"
+                                onchange="onImpactActionSelectChange()">
+                                <option value="">Selecione uma ação...</option>
+                            </select>
+                            <div
+                                style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border-left: 3px solid var(--primary-color);">
+                                <span id="impact-base-date"
+                                    style="font-size: 0.8rem; font-weight: 700; color: var(--primary-color);"></span>
+                                <p id="impact-action-desc"
+                                    style="font-size: 0.75rem; margin-top: 4px; color: var(--text-main); opacity: 0.9;">
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style="flex: 0 1 auto; min-width: 320px;">
+                            <label
+                                style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Janela
+                                de Comparação (Pós-Ação)</label>
+                            <div class="date-filter-row"
+                                style="margin-top: 5px; flex-wrap: wrap; justify-content: center;">
+                                <div class="date-input-wrap">
+                                    <span>De:</span>
+                                    <input type="date" id="impact-date-start" onchange="handleImpactDateChange()">
+                                </div>
+                                <div class="date-input-wrap">
+                                    <span>Até:</span>
+                                    <input type="date" id="impact-date-end" onchange="handleImpactDateChange()">
+                                </div>
+                                <button class="btn primary small" onclick="applyImpactDates()"
+                                    style="height: 32px; padding: 0 15px;">FILTRAR</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Middle Grid: Chart + Conclusion Side-by-Side -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="impact-analytics-container"
+                            style="display: flex; flex-direction: column; gap: 15px;">
+                            <div class="chart-container glass-panel"
+                                style="height: 300px; border-radius: 12px; padding: 15px;">
+                                <canvas id="impactChart"></canvas>
+                            </div>
+                            <div class="impact-stats-compact"
+                                style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                                <div class="stat-card glass-panel" style="text-align: center;">
+                                    <span class="label">MÉDIA ANTES</span>
+                                    <span id="impact-avg-before" class="value">-</span>
+                                </div>
+                                <div class="stat-card glass-panel" style="text-align: center;">
+                                    <span class="label">MÉDIA DEPOIS</span>
+                                    <span id="impact-avg-after" class="value">-</span>
+                                </div>
+                                <div class="stat-card glass-panel highlight"
+                                    style="text-align: center; border: 1px solid var(--primary-color);">
+                                    <span class="label">EVOLUÇÃO</span>
+                                    <span id="impact-delta" class="value">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Conclusion Section Moved Here -->
+                        <div class="conclusion-section glass-panel"
+                            style="display: flex; flex-direction: column; gap: 10px; padding: 15px; border-radius: 12px; border-top: 2px solid var(--primary-color);">
+                            <label
+                                style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Conclusão
+                                da Análise</label>
+                            <textarea id="impact-conclusion-input" class="input-std"
+                                style="width: 100%; flex: 1; min-height: 200px; resize: none; background: rgba(0,0,0,0.2); font-size: 0.85rem;"
+                                placeholder="Notas e observações sobre o resultado observado, justificativas ou notas sobre essa ação..."></textarea>
+                            <button class="btn primary" onclick="saveImpactConclusion()" style="width: 100%;">SALVAR
+                                CONCLUSÃO</button>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Section: Daily Table Full Width -->
+                    <div class="impact-table-section glass-panel"
+                        style="border-radius: 12px; display: flex; flex-direction: column; min-height: 250px;">
+                        <header class="section-label"
+                            style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: 700; font-size: 0.7rem;">
+                            DETALHAMENTO DIÁRIO (COMPLEXO)</header>
+                        <div class="impact-table-scroll" style="flex: 1; overflow-y: auto; padding: 0 10px;">
+                            <table id="impact-detail-table" class="compact-table">
+                                <thead>
+                                    <tr>
+                                        <th>DATA</th>
+                                        <th>PREVISTO (ANTES)</th>
+                                        <th>REALIZADO (DEPOIS)</th>
+                                        <th>VARIAÇÃO ABSOLUTA</th>
+                                        <th>PERFORMANCE (%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View 3: Line Detail (Loading Over Time) -->
+            <div id="modal-detail-view" class="hidden modal-view-container" style="position: relative;">
+                <div class="impact-modal-body">
+                    <div class="impact-controls-panel glass-panel">
+                        <div class="control-group">
+                            <label>PERÍODO DE ANÁLISE:</label>
+                            <div class="date-filter-row">
+                                <div class="date-input-wrap">
+                                    <span>De:</span>
+                                    <input type="date" id="detail-date-start">
+                                </div>
+                                <div class="date-input-wrap">
+                                    <span>Até:</span>
+                                    <input type="date" id="detail-date-end">
+                                </div>
+                                <button class="btn primary small" onclick="applyDetailDates()"
+                                    style="height: 32px; padding: 0 15px;">ATUALIZAR</button>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>FILTRAR POR DIA:</label>
+                            <select id="detail-day-filter" class="input-std" style="width: 100%; margin-top: 5px;"
+                                onchange="onDetailDayFilterChange()">
+                                <option value="all">Todos os Dias</option>
+                                <option value="1">Segunda-feira</option>
+                                <option value="2">Terça-feira</option>
+                                <option value="3">Quarta-feira</option>
+                                <option value="4">Quinta-feira</option>
+                                <option value="5">Sexta-feira</option>
+                                <option value="6">Sábado</option>
+                                <option value="0">Domingo</option>
+                            </select>
+                        </div>
+                        <div class="action-info-box" style="text-align: right;">
+                            <span class="label">VISUALIZANDO CARREGAMENTO</span>
+                            <h4 id="detail-line-title" style="margin: 5px 0 0 0; color: var(--primary-color);">LINHA
+                                -
+                            </h4>
+                        </div>
+                    </div>
+
+                    <div class="impact-visual-section">
+                        <div class="chart-container glass-panel">
+                            <canvas id="detailChart"></canvas>
+                        </div>
+                        <div class="impact-stats-grid">
+                            <div class="stat-card glass-panel">
+                                <span class="label">TOTAL REALIZADO</span>
+                                <span id="detail-total-realized" class="value">-</span>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <span class="label">MÉDIA DIÁRIA</span>
+                                <span id="detail-avg-daily" class="value">-</span>
+                            </div>
+                            <div class="stat-card glass-panel highlight">
+                                <span class="label">LINHA DE TENDÊNCIA</span>
+                                <span id="detail-trend" class="value">ESTÁVEL</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="impact-table-section glass-panel">
+                        <header class="section-label">DETALHAMENTO DIÁRIO</header>
+                        <div class="impact-table-scroll">
+                            <table id="line-detail-table" class="compact-table">
+                                <thead>
+                                    <tr>
+                                        <th>DATA</th>
+                                        <th>DIA</th>
+                                        <th>PREVISTO</th>
+                                        <th>REALIZADO</th>
+                                        <th>DIF. ABS</th>
+                                        <th>PERFORMANCE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Injected by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View 4: Comparative Impact (Line vs System) -->
+            <div id="modal-comparative-view" class="hidden modal-view-container">
+                <div class="impact-modal-body" style="grid-template-columns: 1fr; gap: 20px;">
+                    <!-- Top Section: Line Specific Impact -->
+                    <div class="comparative-dashboard-row">
+                        <div class="section-label">1. RESULTADO DA LINHA</div>
+                        <div class="impact-visual-section" style="margin-top: 10px;">
+                            <div class="chart-container glass-panel" style="height: 250px;">
+                                <canvas id="compLineChart"></canvas>
+                            </div>
+                            <div class="impact-stats-grid">
+                                <div class="stat-card glass-panel">
+                                    <span class="label">MÉDIA ANTES</span>
+                                    <span id="comp-line-avg-before" class="value">-</span>
+                                </div>
+                                <div class="stat-card glass-panel">
+                                    <span class="label">MÉDIA DEPOIS</span>
+                                    <span id="comp-line-avg-after" class="value">-</span>
+                                </div>
+                                <div class="stat-card glass-panel highlight">
+                                    <span id="comp-line-label" class="label">VARIAÇÃO</span>
+                                    <span id="comp-line-delta" class="value">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Section: Systemic Impact -->
+                    <div class="comparative-dashboard-row">
+                        <div class="section-label">2. RESULTADO GERAL DO SISTEMA (MESMO PERÍODO)</div>
+                        <div class="impact-visual-section" style="margin-top: 10px;">
+                            <div class="chart-container glass-panel" style="height: 250px;">
+                                <canvas id="compSystemChart"></canvas>
+                            </div>
+                            <div class="impact-stats-grid">
+                                <div class="stat-card glass-panel">
+                                    <span class="label">SISTEMA ANTES</span>
+                                    <span id="comp-sys-avg-before" class="value">-</span>
+                                </div>
+                                <div class="stat-card glass-panel">
+                                    <span class="label">SISTEMA DEPOIS</span>
+                                    <span id="comp-sys-avg-after" class="value">-</span>
+                                </div>
+                                <div class="stat-card glass-panel highlight">
+                                    <span class="label">VARIAÇÃO GLOBAL</span>
+                                    <span id="comp-sys-delta" class="value">-</span>
+                                </div>
+                                <div class="stat-card glass-panel" style="border: 1px solid var(--primary-color);">
+                                    <span class="label">CONTRIBUIÇÃO DA LINHA</span>
+                                    <span id="comp-line-contribution" class="value"
+                                        style="color: var(--primary-color);">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
