@@ -1227,13 +1227,13 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         print("Writing to database...")
         c.execute(sql_query("BEGIN TRANSACTION;"))
         try:
-            c.executemany('''
+            c.executemany(sql_query('''
                 INSERT INTO bus_lines (date, line_code, line_name, company, realized_passengers) 
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(date, line_code, company) 
                 DO UPDATE SET 
                     realized_passengers = excluded.realized_passengers
-            ''', data_to_insert)
+            ''')), data_to_insert)
             
             print(f"Executing batch insert/update for {len(data_to_insert)} records...")
             conn.commit()
@@ -1409,13 +1409,13 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 for (date, line, comp), info in aggregated.items()
             ]
             
-            c.executemany('''
+            c.executemany(sql_query('''
                 INSERT INTO bus_lines (date, line_code, line_name, company, predicted_passengers, realized_passengers) 
                 VALUES (?, ?, ?, ?, ?, 0)
                 ON CONFLICT(date, line_code, company) 
                 DO UPDATE SET 
                     predicted_passengers = excluded.predicted_passengers
-            ''', data_to_insert)
+            ''')), data_to_insert)
             conn.commit()
             print(f"DB Updated (Predicted). {len(data_to_insert)} records processed.")
         except Exception as e:
