@@ -3,6 +3,12 @@ import http.server
 import socketserver
 import socket
 import sqlite3
+try:
+    import psycopg2
+    import psycopg2.extras
+    HAS_POSTGRES = True
+except ImportError:
+    HAS_POSTGRES = False
 import json
 import csv
 import io
@@ -21,6 +27,32 @@ import pandas as pd
 PORT = int(os.environ.get('PORT', 8000))
 DB_FILE = "bus_analysis.db"
 UPLOAD_DIR = "uploads/analysis"
+
+# Database configuration
+DATABASE_URL = os.environ.get('DATABASE_URL')
+USE_POSTGRES = DATABASE_URL is not None and HAS_POSTGRES
+
+if USE_POSTGRES:
+    print(f"Using PostgreSQL database")
+else:
+    print(f"Using SQLite database: {DB_FILE}")
+
+# Database connection helper
+def get_db_connection():
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = False
+        return conn
+    else:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def get_cursor(conn):
+    if USE_POSTGRES:
+        return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    else:
+        return conn.cursor()
 
 def init_db():
     if not os.path.exists(UPLOAD_DIR):
