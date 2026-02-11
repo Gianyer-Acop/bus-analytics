@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: analise-onibus
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: analise-db
+          property: connectionString
+    autoDeploy: true
+
+databases:
+  - name: analise-db
+    databaseName: bus_analysis
+    user: bus_analysis_user
