@@ -1638,6 +1638,7 @@ def get_local_ip():
 
 
 
+
 if __name__ == "__main__":
     print("--- SERVER VERSION: NETWORK MODE ACTIVATED ---")
     init_db()
@@ -1646,11 +1647,12 @@ if __name__ == "__main__":
         os.makedirs('static')
 
     local_ip = get_local_ip()
-    with ThreadingTCPServer(("", PORT), RequestHandler) as httpd:
+    with ThreadingTCPServer(("0.0.0.0", PORT), RequestHandler) as httpd:
         print("\n" + "="*50)
-        print(f" Servidor rodando na rede local!")
-        print(f" Peça aos seus colegas para acessarem:")
-        print(f" http://{local_ip}:{PORT}")
+        print(f" Servidor rodando!")
+        print(f" Porta: {PORT}")
+        print(f" Acesso local: http://localhost:{PORT}")
+        print(f" Acesso rede: http://{local_ip}:{PORT}")
         print("="*50 + "\n")
 
         httpd.serve_forever()
