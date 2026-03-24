@@ -47,6 +47,7 @@
                         GERAL</button>
                     <button id="tab-operacional" class="main-tab" onclick="switchMainTab('operacional')">VISÃO
                         OPERACIONAL</button>
+                    <button id="tab-acoes" class="main-tab" onclick="switchMainTab('acoes')">AÇÕES</button>
                     <button id="tab-impacto" class="main-tab" onclick="switchMainTab('impacto')">IMPACTO DAS
                         AÇÕES</button>
                 </nav>
@@ -60,6 +61,8 @@
                 <div class="toolbar">
                     <div class="toolbar-header">
                         <h2 id="dashboard-title">Panorama Macro</h2>
+                        <span id="app-version-indicator"
+                            style="font-size: 0.7rem; opacity: 0.8; margin-left: 10px; color: #fbbf24; align-self: center; font-weight: bold;"></span>
                         <button id="btn-back-groups" class="back-btn-business hidden">
                             <span>VOLTAR PARA LISTA DE BLOCOS</span>
                         </button>
@@ -94,6 +97,11 @@
 
                             <button id="btn-manage-groups" class="btn accent">
                                 GERENCIAR BLOCOS
+                            </button>
+
+                            <button id="btn-open-clear-data" class="btn danger"
+                                style="padding: 10px 15px; font-size: 0.8rem;">
+                                LIMPAR DADOS
                             </button>
 
                             <button id="btn-clear-data" class="btn delete" onclick="handleClearData()"
@@ -173,6 +181,16 @@
 
                 <!-- Operational Dashboard Content (Existing) -->
                 <div id="operational-tab-content" class="tab-content hidden">
+                    <!-- Search Bar -->
+                    <!-- Search Bar -->
+                    <div id="operational-search-container" class="glass-panel"
+                        style="margin-bottom: 20px; padding: 15px; display: flex; align-items: center; gap: 15px; position: relative; z-index: 50;">
+                        <span style="font-size: 1.2rem;">🔍</span>
+                        <input type="text" id="operational-search-input"
+                            placeholder="Pesquisar linha por código ou nome (ex: 8000)..."
+                            style="background: transparent; border: none; color: white; width: 100%; outline: none; font-size: 1rem; font-family: 'Outfit', sans-serif;">
+                        <div id="operational-search-results" class="hidden"></div>
+                    </div>
                     <!-- Main Dashboard Content (Split View) -->
                     <div id="dashboard-main-content">
                         <!-- Groups Grid View -->
@@ -194,6 +212,7 @@
                                                 <th>REALIZADO</th>
                                                 <th>DIFERENÇA</th>
                                                 <th>%</th>
+                                                <th>AÇÕES</th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -213,6 +232,7 @@
                                                 <th>REALIZADO</th>
                                                 <th>DIFERENÇA</th>
                                                 <th>%</th>
+                                                <th>AÇÕES</th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -227,11 +247,15 @@
                         <table id="lines-table">
                             <thead>
                                 <tr>
-                                    <th>Linha</th>
+                                    <th onclick="window.setGroupSort('line')"
+                                        style="cursor:pointer;user-select:none;white-space:nowrap;">Linha <span
+                                            id="sort-icon-line" style="font-size:0.75rem;opacity:0.6;">↕</span></th>
                                     <th>Empresa</th>
                                     <th>Previsto</th>
                                     <th>Realizado</th>
-                                    <th>Dif.</th>
+                                    <th onclick="window.setGroupSort('diff')"
+                                        style="cursor:pointer;user-select:none;white-space:nowrap;">Dif. <span
+                                            id="sort-icon-diff" style="font-size:0.75rem;opacity:0.6;">↕</span></th>
                                     <th>Ações</th>
                                 </tr>
                             </thead>
@@ -246,8 +270,24 @@
                 <div id="impact-tab-content" class="tab-content hidden">
                     <!-- Impact Specific Filter -->
                     <div class="glass-panel"
-                        style="margin-bottom: 20px; padding: 15px; display: flex; gap: 15px; align-items: center; justify-content: center;">
-                        <label style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">FILTRAR DATA DAS
+                        style="margin-bottom: 20px; padding: 15px; display: flex; gap: 15px; align-items: center; justify-content: center; position: relative; z-index: 100;">
+                        <label style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">LINHAS:</label>
+                        <div class="multi-select-container">
+                            <div class="multi-select-trigger" id="impact-line-trigger">
+                                <span>Todas as Linhas</span>
+                                <span style="font-size: 0.6rem; opacity: 0.5;">▼</span>
+                            </div>
+                            <div class="multi-select-dropdown" id="impact-line-dropdown">
+                                <input type="text" class="multi-select-search" id="impact-line-search"
+                                    placeholder="Pesquisar linha...">
+                                <div class="multi-select-list" id="impact-line-list">
+                                    <!-- Items injected by JS -->
+                                </div>
+                            </div>
+                        </div>
+                        <label
+                            style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600; margin-left: 10px;">DATA
+                            DAS
                             AÇÕES:</label>
                         <input type="date" id="impact-start-date" class="input-date">
                         <span style="color: var(--text-muted)">até</span>
@@ -298,10 +338,59 @@
                         </table>
                     </div>
                 </div>
-            </main>
-        </section>
+
+                <!-- NEW: Actions Tab Content -->
+                <div id="acoes-tab-content" class="tab-content hidden">
+                    <div
+                        style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <button class="btn primary-glow" onclick="openActionRegistrationModal()">
+                            + REGISTRAR NOVA AÇÃO
+                        </button>
+
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <div class="filter-group glass-panel"
+                                style="padding: 5px 15px; display: flex; gap: 10px; align-items: center;">
+                                <label style="font-size: 0.8rem; color: var(--text-muted);">Período:</label>
+                                <input type="date" id="actions-filter-start" class="input-date">
+                                <span style="color: var(--text-muted)">até</span>
+                                <input type="date" id="actions-filter-end" class="input-date">
+                                <button class="btn text-only" title="Atualizar Histórico"
+                                    onclick="renderActionsTab()">ATUALIZAR</button>
+                            </div>
+
+                            <button id="btn-export-actions" class="btn success"
+                                style="padding: 10px 15px; font-size: 0.8rem;" onclick="exportActionsToExcel()">
+                                <span>EXPORTAR EXCEL</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel table-container">
+                        <table id="actions-history-table">
+                            <thead>
+                                <tr>
+                                    <th>DATA CADASTRO</th>
+                                    <th>DATA AÇÃO</th>
+                                    <th>GRUPO</th>
+                                    <th>LINHA</th>
+                                    <th>FATO</th>
+                                    <th>CAUSA</th>
+                                    <th>AÇÃO</th>
+                                    <th>ANÁLISE</th>
+                                    <th>NOME</th>
+                                    <th>GESTÃO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Rows injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
     </div>
-    <script type="module" src="app.js"></script>
+    </main>
+    </section>
+    </div>
     <!-- Group Management Modal -->
     <div id="group-modal" class="modal hidden">
         <div class="glass-panel modal-content large">
@@ -361,336 +450,463 @@
                     <button class="nav-tab hidden" onclick="switchModalView('comparative')"
                         id="tab-btn-comparative">COMPARATIVO</button>
                 </div>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <h3 style="margin: 0; font-size: 1rem;">Linha: <span id="unified-line-code"
-                            class="primary-text-accent">-</span></h3>
-                    <!-- Added ID for compatibility with older JS references if any -->
-                    <span id="impact-line-title" class="hidden"></span>
-                    <button class="close-modal" onclick="closeUnifiedModal()">&times;</button>
+                <span id="app-version-indicator"
+                    style="font-size: 0.6rem; color: rgba(255,255,255,0.2); align-self: center; margin-left: 10px;">v1.0.0</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <h3 style="margin: 0; font-size: 1rem;">Linha: <span id="unified-line-code"
+                        class="primary-text-accent">-</span></h3>
+                <!-- Added ID for compatibility with older JS references if any -->
+                <span id="impact-line-title" class="hidden"></span>
+                <button class="close-modal" onclick="closeUnifiedModal()">&times;</button>
+            </div>
+        </div>
+
+        <div id="modal-history-view" class="modal-view-container"
+            style="gap: 14px; padding: 18px 20px 20px; overflow-y: auto;">
+
+            <!-- Flow Selector Buttons (always visible) -->
+            <div class="event-flow-selector" style="display: flex; gap: 12px; flex-shrink: 0;">
+                <button id="btn-flow-analysis" class="btn primary-glow"
+                    style="flex: 1; padding: 11px; font-weight: 700;" onclick="setEventFlow('ANALYSIS')">
+                    + REGISTRAR ANÁLISE
+                </button>
+                <button id="btn-flow-action" class="btn accent-glow" style="flex: 1; padding: 12px; font-weight: 700;"
+                    onclick="setEventFlow('ACTION')">
+                    + REGISTRAR AÇÃO
+                </button>
+            </div>
+
+            <!-- Unified Event Form (hidden until a button is clicked) -->
+            <div id="unified-event-form" class="glass-panel hidden"
+                style="padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2);">
+                <input type="hidden" id="event-id">
+                <input type="hidden" id="event-type">
+
+                <div id="form-header"
+                    style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <h4 id="form-title"
+                        style="color: var(--primary-color); margin: 0; text-transform: uppercase; font-size: 0.9rem;">
+                        Registrar Análise</h4>
+                    <button class="btn secondary small" onclick="collapseEventForm()">✕ Cancelar</button>
+                </div>
+
+                <div class="analysis-input-stack" style="display: flex; flex-direction: column; gap: 12px;">
+
+                    <!-- Hidden shared file input (triggered by labels) -->
+                    <input type="file" id="event-file" style="display:none"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onchange="updateFileLabel()">
+
+                    <!-- FATO / CONTEXTO (always shown) -->
+                    <div class="field-group">
+                        <label
+                            style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Fato
+                            / Contexto</label>
+                        <textarea id="event-fact" placeholder="Descreva o problema ou o fato observado..."
+                            class="input-std main-textarea"
+                            style="min-height:60px;margin-top:4px;width:100%;"></textarea>
+                    </div>
+
+                    <!-- ANÁLISE (shown in ANALYSIS mode) -->
+                    <div id="field-group-analysis" class="field-group hidden">
+                        <label
+                            style="font-size:0.65rem;color:var(--primary-color);font-weight:700;text-transform:uppercase;">Análise
+                            / Conclusão</label>
+                        <textarea id="event-analysis-conclusion" placeholder="Qual a conclusão técnica ou causa raiz?"
+                            class="input-std main-textarea"
+                            style="min-height:60px;margin-top:4px;width:100%;"></textarea>
+                    </div>
+
+                    <!-- AÇÃO (shown in ACTION mode) -->
+                    <div id="field-group-action" class="field-group hidden">
+                        <label
+                            style="font-size:0.65rem;color:var(--accent-color);font-weight:700;text-transform:uppercase;">Ação
+                            / Mudança</label>
+                        <textarea id="event-action-taken" placeholder="O que foi feito para corrigir ou melhorar?"
+                            class="input-std main-textarea"
+                            style="min-height:60px;margin-top:4px;width:100%;"></textarea>
+                    </div>
+
+                    <!-- DATE + FILE ROW (compact, always below textareas) -->
+                    <div style="display:flex;gap:8px;align-items:stretch;">
+                        <!-- Date -->
+                        <input type="date" id="event-date" class="input-date"
+                            style="width:148px;flex-shrink:0;height:36px;">
+                        <!-- File upload (shown in ANALYSIS mode, or in ACTION+analysis mode) -->
+                        <div id="file-upload-section" class="hidden" style="flex:1;">
+                            <label for="event-file" class="file-drop-zone"
+                                style="display:flex;align-items:center;justify-content:center;height:36px;cursor:pointer;padding:0 10px;font-size:0.75rem;gap:6px;">
+                                <span id="event-file-name" class="file-label-text">📎 Adicionar arquivo</span>
+                            </label>
+                        </div>
+                    </div>
+
+
+                    <!-- Analyst name (always shown, below the grid) -->
+                    <select id="event-analyst" class="input-std" style="font-size:0.8rem;height:34px;">
+                        <option value="">— Selecionar Analista —</option>
+                        <option value="Henrique">Henrique</option>
+                        <option value="Rodrigo">Rodrigo</option>
+                        <option value="Ricardo">Ricardo</option>
+                        <option value="Gianyer">Gianyer</option>
+                        <option value="Paula">Paula</option>
+                        <option value="Wlysses">Wlysses</option>
+                        <option value="Luiz">Luiz</option>
+                        <option value="Rayanne">Rayanne</option>
+                        <option value="Renan">Renan</option>
+                        <option value="Jefferson">Jefferson</option>
+                        <option value="José">José</option>
+                    </select>
+
+                    <!-- Separator -->
+                    <div style="border-top:1px solid rgba(255,255,255,0.06);"></div>
+
+                    <!-- CHECKBOX: add ACTION (visible in ANALYSIS mode) -->
+                    <div id="toggle-action-section" class="hidden">
+                        <label
+                            style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.78rem;color:var(--accent-color);">
+                            <input type="checkbox" id="toggle-include-action" onchange="toggleExtraField('action')"
+                                style="width:14px;height:14px;accent-color:var(--accent-color);">
+                            Incluir também uma Ação / Mudança
+                        </label>
+                        <div id="field-group-extra-action" class="hidden" style="margin-top:10px;">
+                            <label
+                                style="font-size:0.65rem;color:var(--accent-color);font-weight:700;text-transform:uppercase;">Ação
+                                / Mudança</label>
+                            <textarea id="event-action-taken-extra"
+                                placeholder="O que foi feito para corrigir ou melhorar?" class="input-std main-textarea"
+                                style="min-height:60px;margin-top:4px;width:100%;"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- CHECKBOX: add ANALYSIS (visible in ACTION mode) -->
+                    <div id="toggle-analysis-section" class="hidden">
+                        <label
+                            style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.78rem;color:var(--primary-color);">
+                            <input type="checkbox" id="toggle-include-analysis" onchange="toggleExtraField('analysis')"
+                                style="width:14px;height:14px;accent-color:var(--primary-color);">
+                            Incluir também uma Análise / Conclusão
+                        </label>
+                        <div id="field-group-extra-analysis" class="hidden"
+                            style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+                            <label
+                                style="font-size:0.65rem;color:var(--primary-color);font-weight:700;text-transform:uppercase;">Análise
+                                / Conclusão</label>
+                            <textarea id="event-analysis-conclusion-extra"
+                                placeholder="Qual a conclusão técnica ou causa raiz?" class="input-std main-textarea"
+                                style="min-height:60px;margin-top:4px;width:100%;"></textarea>
+                            <!-- File upload in same compact row style as main form -->
+                            <label for="event-file" id="file-upload-section-action" class="file-drop-zone"
+                                style="display:flex;align-items:center;justify-content:center;height:36px;cursor:pointer;padding:0 10px;font-size:0.75rem;gap:6px;">
+                                <span id="event-file-name-action" class="file-label-text">📎 Adicionar arquivo de
+                                    análise</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Save button -->
+                    <button id="btn-save-event" class="btn primary-glow" style="width:100%;height:38px;"
+                        onclick="saveUnifiedEvent()">SALVAR EVENTO</button>
+
+                    <!-- Edit mode cancel -->
+                    <div id="edit-controls" class="hidden" style="display:flex;gap:10px;">
+                        <button class="btn secondary small" style="flex:1;" onclick="cancelEventEdit()">CANCELAR
+                            EDIÇÃO</button>
+                    </div>
+
+                </div>
+            </div>
+            <!-- end unified-event-form -->
+
+            <!-- History — always visible, fills remaining space inside modal-history-view -->
+            <div class="history-section" style="display: flex; flex-direction: column;">
+                <header class="section-label"
+                    style="display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <span>HISTÓRICO</span>
+                        <div class="history-filters"
+                            style="display: flex; align-items: center; gap: 8px; margin-left: 20px;">
+                            <input type="date" id="history-filter-start" class="input-date small"
+                                style="height: 28px; font-size: 0.75rem;">
+                            <span style="font-size: 0.7rem; opacity: 0.5;">até</span>
+                            <input type="date" id="history-filter-end" class="input-date small"
+                                style="height: 28px; font-size: 0.75rem;">
+                            <button class="btn secondary small" style="height: 28px; padding: 0 10px;"
+                                onclick="applyHistoryFilter()">Filtrar</button>
+                        </div>
+                    </div>
+                    <span id="history-counter" style="color: var(--primary-color); font-size: 0.6rem; opacity: 0.7;">0
+                        registros</span>
+                </header>
+                <div id="unified-history-list" class="styled-list history-scroll-area" style="margin-top: 8px;">
+                    <div class="placeholder-text">Carregando histórico...</div>
                 </div>
             </div>
 
-            <!-- View 1: History (Documents & Actions) -->
-            <div id="modal-history-view" class="modal-view-container">
-                <div class="modal-body unified-split-body">
-                    <!-- LEFT COLUMN: Analysis (Files) -->
-                    <div class="unified-column border-right">
-                        <section class="analysis-section-box">
-                            <header class="section-label">ANÁLISE E DOCUMENTOS</header>
-                            <div class="analysis-input-stack">
-                                <textarea id="analysis-desc" placeholder="Observações da análise..."
-                                    class="input-std main-textarea" style="min-height: 60px;"></textarea>
-                                <div class="upload-controls-wrapper">
-                                    <div class="file-input-container" style="flex: 1;">
-                                        <label for="analysis-file" class="file-drop-zone">
-                                            <span class="file-label-text">Anexar Arquivo</span>
-                                            <input type="file" id="analysis-file" accept=".pdf,.doc,.docx,.xls,.xlsx">
-                                        </label>
-                                    </div>
-                                    <button id="btn-upload-analysis" class="btn primary-glow">SALVAR ARQUIVO</button>
-                                </div>
-                            </div>
-                        </section>
-                        <div class="separator-glow"></div>
-                        <section class="analysis-section-box">
-                            <header class="section-label">HISTÓRICO DE DOCUMENTOS</header>
-                            <div id="analysis-list" class="styled-list history-scroll-area">
-                                <div class="placeholder-text">Nenhum documento anexado.</div>
-                            </div>
-                        </section>
-                    </div>
+        </div>
+        <!-- end modal-history-view -->
 
-                    <!-- RIGHT COLUMN: Actions (Comments) -->
-                    <div class="unified-column">
-                        <section class="analysis-section-box">
-                            <header class="section-label">PLANO DE AÇÃO / COMENTÁRIOS</header>
-                            <div class="analysis-input-stack">
-                                <textarea id="action-comment" placeholder="Descreva a ação ou mudança necessária..."
-                                    class="input-std main-textarea" style="min-height: 60px;"></textarea>
-                                <div class="upload-controls-wrapper">
-                                    <div style="display: flex; flex-direction: column; gap: 5px; flex: 1;">
-                                        <label style="font-size: 0.7rem; color: var(--text-muted);">Data de
-                                            Implementação:</label>
-                                        <input type="date" id="action-date" class="input-date" style="width: 100%;">
-                                    </div>
-                                    <button id="btn-save-action" class="btn primary-glow">SALVAR AÇÃO</button>
-                                </div>
-                            </div>
-                        </section>
-                        <div class="separator-glow"></div>
-                        <section class="analysis-section-box">
-                            <header class="section-label">HISTÓRICO DE MUDANÇAS E AÇÕES</header>
-                            <div id="actions-list" class="styled-list history-scroll-area">
-                                <div class="placeholder-text">Nenhum comentário registrado.</div>
-                            </div>
-                        </section>
-                    </div>
+        <div id="modal-impact-view" class="hidden modal-view-container" style="position: relative;">
+            <!-- Loading Overlay -->
+            <div id="impact-loading" class="loading-overlay hidden">
+                <div class="spinner"></div>
+                <div class="loading-text">CARREGANDO ANÁLISE...</div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="impact-empty-state" class="hidden"
+                style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 40px; text-align: center;">
+                <div class="glass-panel" style="padding: 40px; max-width: 400px; width: 100%;">
+                    <div style="font-size: 3rem; margin-bottom: 20px; opacity: 0.3;">📋</div>
+                    <h3 style="color: var(--text-main); margin-bottom: 10px;">Nenhuma Ação</h3>
+                    <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.5;">Não existem ações
+                        ou
+                        mudanças registradas para esta linha no período selecionado.</p>
+                    <button class="btn accent" style="margin-top: 25px; width: 100%;"
+                        onclick="switchModalView('history')">ADICIONAR AÇÃO NO HISTÓRICO</button>
                 </div>
             </div>
 
-            <div id="modal-impact-view" class="hidden modal-view-container" style="position: relative;">
-                <!-- Loading Overlay -->
-                <div id="impact-loading" class="loading-overlay hidden">
-                    <div class="spinner"></div>
-                    <div class="loading-text">CARREGANDO ANÁLISE...</div>
-                </div>
+            <div class="impact-modal-body"
+                style="padding: 15px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; height: 100%;">
+                <!-- Top Row: Action Info & Date Controls -->
+                <div class="impact-header-row glass-panel"
+                    style="padding: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="flex: 1;">
+                        <label
+                            style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Ação
+                            Monitorada</label>
+                        <select id="impact-action-select" class="input-std" style="width: 100%; margin-top: 5px;"
+                            onchange="onImpactActionSelectChange()">
+                            <option value="">Selecione uma ação...</option>
+                        </select>
+                        <div
+                            style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border-left: 3px solid var(--primary-color);">
+                            <span id="impact-base-date"
+                                style="font-size: 0.8rem; font-weight: 700; color: var(--primary-color);"></span>
+                            <p id="impact-action-desc"
+                                style="font-size: 0.75rem; margin-top: 4px; color: var(--text-main); opacity: 0.9;">
+                            </p>
+                        </div>
+                    </div>
 
-                <!-- Empty State -->
-                <div id="impact-empty-state" class="hidden"
-                    style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 40px; text-align: center;">
-                    <div class="glass-panel" style="padding: 40px; max-width: 400px; width: 100%;">
-                        <div style="font-size: 3rem; margin-bottom: 20px; opacity: 0.3;">📋</div>
-                        <h3 style="color: var(--text-main); margin-bottom: 10px;">Nenhuma Ação</h3>
-                        <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.5;">Não existem ações ou
-                            mudanças registradas para esta linha no período selecionado.</p>
-                        <button class="btn accent" style="margin-top: 25px; width: 100%;"
-                            onclick="switchModalView('history')">ADICIONAR AÇÃO NO HISTÓRICO</button>
+                    <div style="flex: 0 1 auto; min-width: 320px;">
+                        <label
+                            style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Janela
+                            de Comparação (Pós-Ação)</label>
+                        <div class="date-filter-row" style="margin-top: 5px; flex-wrap: wrap; justify-content: center;">
+                            <div class="date-input-wrap">
+                                <span>De:</span>
+                                <input type="date" id="impact-date-start" onchange="handleImpactDateChange()">
+                            </div>
+                            <div class="date-input-wrap">
+                                <span>Até:</span>
+                                <input type="date" id="impact-date-end" onchange="handleImpactDateChange()">
+                            </div>
+                            <button class="btn primary small" onclick="applyImpactDates()"
+                                style="height: 32px; padding: 0 15px;">FILTRAR</button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="impact-modal-body"
-                    style="padding: 15px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; height: 100%;">
-                    <!-- Top Row: Action Info & Date Controls -->
-                    <div class="impact-header-row glass-panel"
-                        style="padding: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
-                        <div style="flex: 1;">
-                            <label
-                                style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Ação
-                                Monitorada</label>
-                            <select id="impact-action-select" class="input-std" style="width: 100%; margin-top: 5px;"
-                                onchange="onImpactActionSelectChange()">
-                                <option value="">Selecione uma ação...</option>
-                            </select>
-                            <div
-                                style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border-left: 3px solid var(--primary-color);">
-                                <span id="impact-base-date"
-                                    style="font-size: 0.8rem; font-weight: 700; color: var(--primary-color);"></span>
-                                <p id="impact-action-desc"
-                                    style="font-size: 0.75rem; margin-top: 4px; color: var(--text-main); opacity: 0.9;">
-                                </p>
-                            </div>
+                <!-- Middle Grid: Chart + Conclusion Side-by-Side -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="impact-analytics-container" style="display: flex; flex-direction: column; gap: 15px;">
+                        <div class="chart-container glass-panel"
+                            style="height: 300px; border-radius: 12px; padding: 15px;">
+                            <canvas id="impactChart"></canvas>
                         </div>
-
-                        <div style="flex: 0 1 auto; min-width: 320px;">
-                            <label
-                                style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Janela
-                                de Comparação (Pós-Ação)</label>
-                            <div class="date-filter-row"
-                                style="margin-top: 5px; flex-wrap: wrap; justify-content: center;">
-                                <div class="date-input-wrap">
-                                    <span>De:</span>
-                                    <input type="date" id="impact-date-start" onchange="handleImpactDateChange()">
-                                </div>
-                                <div class="date-input-wrap">
-                                    <span>Até:</span>
-                                    <input type="date" id="impact-date-end" onchange="handleImpactDateChange()">
-                                </div>
-                                <button class="btn primary small" onclick="applyImpactDates()"
-                                    style="height: 32px; padding: 0 15px;">FILTRAR</button>
+                        <div class="impact-stats-compact"
+                            style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                            <div class="stat-card glass-panel" style="text-align: center;">
+                                <span class="label">MÉDIA ANTES</span>
+                                <span id="impact-avg-before" class="value">-</span>
+                            </div>
+                            <div class="stat-card glass-panel" style="text-align: center;">
+                                <span class="label">MÉDIA DEPOIS</span>
+                                <span id="impact-avg-after" class="value">-</span>
+                            </div>
+                            <div class="stat-card glass-panel highlight"
+                                style="text-align: center; border: 1px solid #facc15;">
+                                <span class="label">EVOLUÇÃO</span>
+                                <span id="impact-delta" class="value">-</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Middle Grid: Chart + Conclusion Side-by-Side -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                        <div class="impact-analytics-container"
-                            style="display: flex; flex-direction: column; gap: 15px;">
-                            <div class="chart-container glass-panel"
-                                style="height: 300px; border-radius: 12px; padding: 15px;">
-                                <canvas id="impactChart"></canvas>
-                            </div>
-                            <div class="impact-stats-compact"
-                                style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                                <div class="stat-card glass-panel" style="text-align: center;">
-                                    <span class="label">MÉDIA ANTES</span>
-                                    <span id="impact-avg-before" class="value">-</span>
-                                </div>
-                                <div class="stat-card glass-panel" style="text-align: center;">
-                                    <span class="label">MÉDIA DEPOIS</span>
-                                    <span id="impact-avg-after" class="value">-</span>
-                                </div>
-                                <div class="stat-card glass-panel highlight"
-                                    style="text-align: center; border: 1px solid var(--primary-color);">
-                                    <span class="label">EVOLUÇÃO</span>
-                                    <span id="impact-delta" class="value">-</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Conclusion Section Moved Here -->
-                        <div class="conclusion-section glass-panel"
-                            style="display: flex; flex-direction: column; gap: 10px; padding: 15px; border-radius: 12px; border-top: 2px solid var(--primary-color);">
-                            <label
-                                style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Conclusão
-                                da Análise</label>
-                            <textarea id="impact-conclusion-input" class="input-std"
-                                style="width: 100%; flex: 1; min-height: 200px; resize: none; background: rgba(0,0,0,0.2); font-size: 0.85rem;"
-                                placeholder="Notas e observações sobre o resultado observado, justificativas ou notas sobre essa ação..."></textarea>
-                            <button class="btn primary" onclick="saveImpactConclusion()" style="width: 100%;">SALVAR
-                                CONCLUSÃO</button>
-                        </div>
+                    <!-- Conclusion Section Moved Here -->
+                    <div class="conclusion-section glass-panel"
+                        style="display: flex; flex-direction: column; gap: 10px; padding: 15px; border-radius: 12px; border-top: 2px solid var(--primary-color);">
+                        <label
+                            style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Conclusão
+                            da Análise</label>
+                        <textarea id="impact-conclusion-input" class="input-std"
+                            style="width: 100%; flex: 1; min-height: 200px; resize: none; background: rgba(0,0,0,0.2); font-size: 0.85rem;"
+                            placeholder="Notas e observações sobre o resultado observado, justificativas ou notas sobre essa ação..."></textarea>
+                        <button class="btn primary" onclick="saveImpactConclusion()" style="width: 100%;">SALVAR
+                            CONCLUSÃO</button>
                     </div>
+                </div>
 
-                    <!-- Bottom Section: Daily Table Full Width -->
-                    <div class="impact-table-section glass-panel"
-                        style="border-radius: 12px; display: flex; flex-direction: column; min-height: 250px;">
-                        <header class="section-label"
-                            style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: 700; font-size: 0.7rem;">
-                            DETALHAMENTO DIÁRIO (COMPLEXO)</header>
-                        <div class="impact-table-scroll" style="flex: 1; overflow-y: auto; padding: 0 10px;">
-                            <table id="impact-detail-table" class="compact-table">
-                                <thead>
-                                    <tr>
-                                        <th>DATA</th>
-                                        <th>PREVISTO (ANTES)</th>
-                                        <th>REALIZADO (DEPOIS)</th>
-                                        <th>VARIAÇÃO ABSOLUTA</th>
-                                        <th>PERFORMANCE (%)</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
+                <!-- Bottom Section: Daily Table Full Width -->
+                <div class="impact-table-section glass-panel"
+                    style="border-radius: 12px; display: flex; flex-direction: column; min-height: 250px;">
+                    <header class="section-label"
+                        style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: 700; font-size: 0.7rem;">
+                        DETALHAMENTO DIÁRIO (COMPLEXO)</header>
+                    <div class="impact-table-scroll" style="flex: 1; overflow-y: auto; padding: 0 10px;">
+                        <table id="impact-detail-table" class="compact-table">
+                            <thead>
+                                <tr>
+                                    <th>DATA</th>
+                                    <th>PREVISTO (ANTES)</th>
+                                    <th>REALIZADO (DEPOIS)</th>
+                                    <th>VARIAÇÃO ABSOLUTA</th>
+                                    <th>PERFORMANCE (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- View 3: Line Detail (Loading Over Time) -->
-            <div id="modal-detail-view" class="hidden modal-view-container" style="position: relative;">
-                <div class="impact-modal-body">
-                    <div class="impact-controls-panel glass-panel">
-                        <div class="control-group">
-                            <label>PERÍODO DE ANÁLISE:</label>
-                            <div class="date-filter-row">
-                                <div class="date-input-wrap">
-                                    <span>De:</span>
-                                    <input type="date" id="detail-date-start">
-                                </div>
-                                <div class="date-input-wrap">
-                                    <span>Até:</span>
-                                    <input type="date" id="detail-date-end">
-                                </div>
-                                <button class="btn primary small" onclick="applyDetailDates()"
-                                    style="height: 32px; padding: 0 15px;">ATUALIZAR</button>
+        <!-- View 3: Line Detail (Loading Over Time) -->
+        <div id="modal-detail-view" class="hidden modal-view-container" style="position: relative;">
+            <div class="impact-modal-body">
+                <div class="impact-controls-panel glass-panel">
+                    <div class="control-group">
+                        <label>PERÍODO DE ANÁLISE:</label>
+                        <div class="date-filter-row">
+                            <div class="date-input-wrap">
+                                <span>De:</span>
+                                <input type="date" id="detail-date-start">
                             </div>
-                        </div>
-                        <div class="control-group">
-                            <label>FILTRAR POR DIA:</label>
-                            <select id="detail-day-filter" class="input-std" style="width: 100%; margin-top: 5px;"
-                                onchange="onDetailDayFilterChange()">
-                                <option value="all">Todos os Dias</option>
-                                <option value="1">Segunda-feira</option>
-                                <option value="2">Terça-feira</option>
-                                <option value="3">Quarta-feira</option>
-                                <option value="4">Quinta-feira</option>
-                                <option value="5">Sexta-feira</option>
-                                <option value="6">Sábado</option>
-                                <option value="0">Domingo</option>
-                            </select>
-                        </div>
-                        <div class="action-info-box" style="text-align: right;">
-                            <span class="label">VISUALIZANDO CARREGAMENTO</span>
-                            <h4 id="detail-line-title" style="margin: 5px 0 0 0; color: var(--primary-color);">LINHA
-                                -
-                            </h4>
+                            <div class="date-input-wrap">
+                                <span>Até:</span>
+                                <input type="date" id="detail-date-end">
+                            </div>
+                            <button class="btn primary small" onclick="applyDetailDates()"
+                                style="height: 32px; padding: 0 15px;">ATUALIZAR</button>
                         </div>
                     </div>
+                    <div class="control-group">
+                        <label>FILTRAR POR DIA:</label>
+                        <select id="detail-day-filter" class="input-std" style="width: 100%; margin-top: 5px;"
+                            onchange="onDetailDayFilterChange()">
+                            <option value="all">Todos os Dias</option>
+                            <option value="1">Segunda-feira</option>
+                            <option value="2">Terça-feira</option>
+                            <option value="3">Quarta-feira</option>
+                            <option value="4">Quinta-feira</option>
+                            <option value="5">Sexta-feira</option>
+                            <option value="6">Sábado</option>
+                            <option value="0">Domingo</option>
+                        </select>
+                    </div>
+                    <div class="action-info-box" style="text-align: right;">
+                        <span class="label">VISUALIZANDO CARREGAMENTO</span>
+                        <h4 id="detail-line-title" style="margin: 5px 0 0 0; color: var(--primary-color);">LINHA
+                            -
+                        </h4>
+                    </div>
+                </div>
 
-                    <div class="impact-visual-section">
-                        <div class="chart-container glass-panel">
-                            <canvas id="detailChart"></canvas>
+                <div class="impact-visual-section">
+                    <div class="chart-container glass-panel">
+                        <canvas id="detailChart"></canvas>
+                    </div>
+                    <div class="impact-stats-grid">
+                        <div class="stat-card glass-panel">
+                            <span class="label">TOTAL REALIZADO</span>
+                            <span id="detail-total-realized" class="value">-</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="label">MÉDIA DIÁRIA</span>
+                            <span id="detail-avg-daily" class="value">-</span>
+                        </div>
+                        <div class="stat-card glass-panel highlight">
+                            <span class="label">LINHA DE TENDÊNCIA</span>
+                            <span id="detail-trend" class="value">ESTÁVEL</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="impact-table-section glass-panel">
+                    <header class="section-label">DETALHAMENTO DIÁRIO</header>
+                    <div class="impact-table-scroll">
+                        <table id="line-detail-table" class="compact-table">
+                            <thead>
+                                <tr>
+                                    <th>DATA</th>
+                                    <th>DIA</th>
+                                    <th>PREVISTO</th>
+                                    <th>REALIZADO</th>
+                                    <th>DIF. ABS</th>
+                                    <th>PERFORMANCE</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View 4: Comparative Impact (Line vs System) -->
+        <div id="modal-comparative-view" class="hidden modal-view-container">
+            <div class="impact-modal-body" style="grid-template-columns: 1fr; gap: 20px;">
+                <!-- Top Section: Line Specific Impact -->
+                <div class="comparative-dashboard-row">
+                    <div class="section-label">1. RESULTADO DA LINHA</div>
+                    <div class="impact-visual-section" style="margin-top: 10px;">
+                        <div class="chart-container glass-panel" style="height: 250px;">
+                            <canvas id="compLineChart"></canvas>
                         </div>
                         <div class="impact-stats-grid">
                             <div class="stat-card glass-panel">
-                                <span class="label">TOTAL REALIZADO</span>
-                                <span id="detail-total-realized" class="value">-</span>
+                                <span class="label">MÉDIA ANTES</span>
+                                <span id="comp-line-avg-before" class="value">-</span>
                             </div>
                             <div class="stat-card glass-panel">
-                                <span class="label">MÉDIA DIÁRIA</span>
-                                <span id="detail-avg-daily" class="value">-</span>
+                                <span class="label">MÉDIA DEPOIS</span>
+                                <span id="comp-line-avg-after" class="value">-</span>
                             </div>
                             <div class="stat-card glass-panel highlight">
-                                <span class="label">LINHA DE TENDÊNCIA</span>
-                                <span id="detail-trend" class="value">ESTÁVEL</span>
+                                <span id="comp-line-label" class="label">VARIAÇÃO</span>
+                                <span id="comp-line-delta" class="value">-</span>
                             </div>
-                        </div>
-                    </div>
-
-                    <div class="impact-table-section glass-panel">
-                        <header class="section-label">DETALHAMENTO DIÁRIO</header>
-                        <div class="impact-table-scroll">
-                            <table id="line-detail-table" class="compact-table">
-                                <thead>
-                                    <tr>
-                                        <th>DATA</th>
-                                        <th>DIA</th>
-                                        <th>PREVISTO</th>
-                                        <th>REALIZADO</th>
-                                        <th>DIF. ABS</th>
-                                        <th>PERFORMANCE</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <!-- Injected by JS -->
-                                </tbody>
-                            </table>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- View 4: Comparative Impact (Line vs System) -->
-            <div id="modal-comparative-view" class="hidden modal-view-container">
-                <div class="impact-modal-body" style="grid-template-columns: 1fr; gap: 20px;">
-                    <!-- Top Section: Line Specific Impact -->
-                    <div class="comparative-dashboard-row">
-                        <div class="section-label">1. RESULTADO DA LINHA</div>
-                        <div class="impact-visual-section" style="margin-top: 10px;">
-                            <div class="chart-container glass-panel" style="height: 250px;">
-                                <canvas id="compLineChart"></canvas>
-                            </div>
-                            <div class="impact-stats-grid">
-                                <div class="stat-card glass-panel">
-                                    <span class="label">MÉDIA ANTES</span>
-                                    <span id="comp-line-avg-before" class="value">-</span>
-                                </div>
-                                <div class="stat-card glass-panel">
-                                    <span class="label">MÉDIA DEPOIS</span>
-                                    <span id="comp-line-avg-after" class="value">-</span>
-                                </div>
-                                <div class="stat-card glass-panel highlight">
-                                    <span id="comp-line-label" class="label">VARIAÇÃO</span>
-                                    <span id="comp-line-delta" class="value">-</span>
-                                </div>
-                            </div>
+                <!-- Bottom Section: Systemic Impact -->
+                <div class="comparative-dashboard-row">
+                    <div class="section-label">2. RESULTADO GERAL DO SISTEMA (MESMO PERÍODO)</div>
+                    <div class="impact-visual-section" style="margin-top: 10px;">
+                        <div class="chart-container glass-panel" style="height: 250px;">
+                            <canvas id="compSystemChart"></canvas>
                         </div>
-                    </div>
-
-                    <!-- Bottom Section: Systemic Impact -->
-                    <div class="comparative-dashboard-row">
-                        <div class="section-label">2. RESULTADO GERAL DO SISTEMA (MESMO PERÍODO)</div>
-                        <div class="impact-visual-section" style="margin-top: 10px;">
-                            <div class="chart-container glass-panel" style="height: 250px;">
-                                <canvas id="compSystemChart"></canvas>
+                        <div class="impact-stats-grid">
+                            <div class="stat-card glass-panel">
+                                <span class="label">SISTEMA ANTES</span>
+                                <span id="comp-sys-avg-before" class="value">-</span>
                             </div>
-                            <div class="impact-stats-grid">
-                                <div class="stat-card glass-panel">
-                                    <span class="label">SISTEMA ANTES</span>
-                                    <span id="comp-sys-avg-before" class="value">-</span>
-                                </div>
-                                <div class="stat-card glass-panel">
-                                    <span class="label">SISTEMA DEPOIS</span>
-                                    <span id="comp-sys-avg-after" class="value">-</span>
-                                </div>
-                                <div class="stat-card glass-panel highlight">
-                                    <span class="label">VARIAÇÃO GLOBAL</span>
-                                    <span id="comp-sys-delta" class="value">-</span>
-                                </div>
-                                <div class="stat-card glass-panel" style="border: 1px solid var(--primary-color);">
-                                    <span class="label">CONTRIBUIÇÃO DA LINHA</span>
-                                    <span id="comp-line-contribution" class="value"
-                                        style="color: var(--primary-color);">-</span>
-                                </div>
+                            <div class="stat-card glass-panel">
+                                <span class="label">SISTEMA DEPOIS</span>
+                                <span id="comp-sys-avg-after" class="value">-</span>
+                            </div>
+                            <div class="stat-card glass-panel highlight">
+                                <span class="label">VARIAÇÃO GLOBAL</span>
+                                <span id="comp-sys-delta" class="value">-</span>
+                            </div>
+                            <div class="stat-card glass-panel" style="border: 1px solid var(--primary-color);">
+                                <span class="label">CONTRIBUIÇÃO DA LINHA</span>
+                                <span id="comp-line-contribution" class="value"
+                                    style="color: var(--primary-color);">-</span>
                             </div>
                         </div>
                     </div>
@@ -698,8 +914,426 @@
             </div>
         </div>
     </div>
+    </div>
 
-    <script src="app.js"></script>
+    <div id="action-reg-modal" class="modal hidden">
+        <div class="action-panel" style="max-width: 900px; width: 95%;">
+            <header class="modal-header">
+                <h2 id="action-reg-title">Registrar Ação</h2>
+                <button class="close-modal" onclick="closeActionRegModal()">&times;</button>
+            </header>
+            <div class="modal-body" style="padding: 20px;">
+                <form id="action-reg-form">
+                    <input type="hidden" id="reg-event-id" value="">
+
+                    <div class="modal-split-layout"
+                        style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px;">
+                        <!-- Left Column: Form Fields -->
+                        <div class="form-left-col" style="min-width: 0;">
+                            <!-- Row 1: Dates -->
+                            <div class="field-grid"
+                                style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px;">
+                                <div class="field-group" style="min-width: 0;">
+                                    <label>Data Cadastro</label>
+                                    <input type="date" id="reg-upload-date" class="input-date" required
+                                        style="width: 100%;">
+                                </div>
+                                <div class="field-group" style="min-width: 0;">
+                                    <label>Data Ação</label>
+                                    <input type="date" id="reg-action-date" class="input-date" style="width: 100%;">
+                                </div>
+                            </div>
+
+                            <!-- Row 2: Analyst -->
+                            <div class="field-group" style="margin-top: 12px; min-width: 0;">
+                                <label>Nome (Analista)</label>
+                                <select id="reg-analyst" class="input-std" required style="width: 100%;">
+                                    <option value="">— Selecionar —</option>
+                                    <option value="Henrique">Henrique</option>
+                                    <option value="Rodrigo">Rodrigo</option>
+                                    <option value="Gianyer">Gianyer</option>
+                                    <option value="Ricardo">Ricardo</option>
+                                    <option value="Paula">Paula</option>
+                                    <option value="Wlysses">Wlysses</option>
+                                    <option value="Luiz">Luiz</option>
+                                    <option value="Rayanne">Rayanne</option>
+                                    <option value="Renan">Renan</option>
+                                    <option value="Jefferson">Jefferson</option>
+                                    <option value="José">José</option>
+                                </select>
+                            </div>
+
+                            <!-- Row 3: Group and Line -->
+                            <div class="field-grid"
+                                style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 12px;">
+                                <div class="field-group" style="min-width: 0;">
+                                    <label>Grupo (Bloco)</label>
+                                    <select id="reg-group" class="input-std" onchange="updateRegLinesDropdown()"
+                                        required style="width: 100%;">
+                                        <option value="">— Selecionar Grupo —</option>
+                                        <!-- Populate via JS -->
+                                    </select>
+                                </div>
+                                <div class="field-group" style="min-width: 0;">
+                                    <label>Linha</label>
+                                    <select id="reg-line" class="input-std" required disabled style="width: 100%;">
+                                        <option value="">— Selecionar Linha —</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Row 4: Fact and Cause -->
+                            <div class="field-grid"
+                                style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 12px;">
+                                <div class="field-group" style="min-width: 0;">
+                                    <label>Fato</label>
+                                    <div class="ms-dropdown" id="reg-fact-dropdown" data-selection="single">
+                                        <div class="ms-select-box" onclick="toggleMSDropdown('reg-fact-dropdown')">
+                                            <span class="ms-placeholder ms-selected-text">Selecionar Fato...</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </div>
+                                        <div class="ms-options-list">
+                                            <div class="ms-search-container">
+                                                <input type="text" class="ms-search-input" placeholder="Pesquisar..."
+                                                    onkeyup="filterMSOptions(this)">
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
+                                                <input type="checkbox"> <span>Não atingiu a meta</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
+                                                <input type="checkbox"> <span>Pouca oferta na area</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
+                                                <input type="checkbox"> <span>Desvio na via</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
+                                                <input type="checkbox"> <span>Erro de projeção</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
+                                                <input type="checkbox"> <span>Chuva</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
+                                                <input type="checkbox"> <span>Greve/paralização</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
+                                                <input type="checkbox"> <span>Mudança de tarifa</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="field-group" style="min-width: 0;">
+                                    <label>Causa(s)</label>
+                                    <div class="ms-dropdown" id="reg-cause-dropdown">
+                                        <div class="ms-select-box" onclick="toggleMSDropdown('reg-cause-dropdown')">
+                                            <span class="ms-placeholder ms-selected-text">Selecionar Causa(s)...</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </div>
+                                        <div class="ms-options-list">
+                                            <div class="ms-search-container">
+                                                <input type="text" class="ms-search-input" placeholder="Pesquisar..."
+                                                    onkeyup="filterMSOptions(this)">
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Acidente</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Ajuste da quilometragem morta</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Áreas não cobertas pelo transporte
+                                                    urbano</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Categoria inferior ao programado</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Cliente Migrou de linha</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Cliente saiu do sistema</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Desativação de polos geradores de demanda
+                                                    (escolas/ empresas/ lojas etc.)</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Desvios autorizados pela operação</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Equilíbrio financeiro entre as
+                                                    empresas</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Falha de transmissão</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Falta de operador</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Falta de veículo</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Linha com alto índice de assalto</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Linha com atraso</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Linha com espaçamento longo na
+                                                    frequência</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Linha sobreposta</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Não retorno das atividades em
+                                                    escolas/faculdade</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Operador não cumpre os horários
+                                                    planejados</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Piora na Linha Após Implementação de
+                                                    Bolsão</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Processamentos pendentes (UDP x
+                                                    COLLECTOR)</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Programação não atende plenamente a
+                                                    demanda</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Problemas mecânicos constantes</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Reclamações Via App Cadê meu ônibus</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Solicitação do IMMU</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Veículos em comboio</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Dia Atípico (Chuva/Cancelamento de Aulas/Eventos)</span>
+                                            </div>
+                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
+                                                <input type="checkbox"> <span>Divergência no comportamento de passageiros</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Row 5: Actions Taken -->
+                            <div class="field-group" style="margin-top: 12px; min-width: 0;">
+                                <label>Ação(ões) Tomada(s)</label>
+                                <div class="ms-dropdown drop-up" id="reg-action-dropdown">
+                                    <div class="ms-select-box" onclick="toggleMSDropdown('reg-action-dropdown')">
+                                        <span class="ms-placeholder ms-selected-text">Selecionar Ação(ões)...</span>
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                    <div class="ms-options-list">
+                                        <div class="ms-search-container">
+                                            <input type="text" class="ms-search-input" placeholder="Pesquisar..."
+                                                onkeyup="filterMSOptions(this)">
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Ajuste conforme demanda</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Ajuste conforme solicitação do App cadê meu
+                                                ônibus</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Ajuste por tempo de espera na
+                                                frequência</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Ajuste por tempo insuficiente</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Comunicar a operação referente aos problemas
+                                                mecânicos</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Desmembramento do bolsão</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Informar o setor de fomento NFP</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Linha Nova</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Mudança de empresa</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Mudança de itinerário</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Mudança de terminal</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Mudança para linha expressa</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Não abonar a penalização por troca de
+                                                categoria</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Notificar a garagem referente
+                                                Adiantamento/Atraso operacional atípico</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Programação com acréscimo de veículo</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Programação com oferta de mais viagens</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Programação de férias</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Programação especial</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Programação feriado</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Programação passou a ser bolsão</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Programação ponto facultativo</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Redimensionar a frota devido a Desativação de
+                                                polos geradores de demanda (escolas/ empresas/ lojas etc.)</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Reportar dados pendente de processamento ao
+                                                TI</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Retorno da escala padrão</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Retorno da linha com escala padrão</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Transferência de tabela</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Transformação de intermediário para
+                                                parceirado</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Transformação de parceirado em TU</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Transformação de TU para parceirado</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Troca de categoria</span>
+                                        </div>
+                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
+                                            <input type="checkbox"> <span>Troca de categoria por maior ao
+                                                programado</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Analysis Textarea -->
+                        <div class="form-right-col" style="display: flex; flex-direction: column; min-width: 0;">
+                            <label>Análise (Resumo)</label>
+                            <textarea id="reg-analysis" class="input-std"
+                                style="flex-grow: 1; min-height: 400px; width: 100%; border-radius: 8px; resize: none; margin-top: 5px; padding: 15px; font-size: 0.9rem;"
+                                placeholder="Insira o resumo da análise técnica aqui..." required></textarea>
+                        </div>
+                    </div>
+
+                    <div class="modal-actions"
+                        style="margin-top: 25px; display: flex; justify-content: flex-end; gap: 15px;">
+                        <button type="button" class="btn text-only" onclick="closeActionRegModal()">CANCELAR</button>
+                        <button type="button" class="btn primary-glow" onclick="saveActionRegistration()">SALVAR
+                            REGISTRO</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for showing analysis summary -->
+    <div id="analysis-summary-modal" class="modal hidden">
+        <div class="summary-panel" style="max-width: 900px; width: 95%;">
+            <header class="modal-header">
+                <h2>Resumo da Análise</h2>
+                <button class="close-modal" onclick="closeSummaryModal()">&times;</button>
+            </header>
+            <div class="modal-body" style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+                <p id="summary-text" style="line-height: 1.6; color: var(--text-main); white-space: pre-wrap;"></p>
+                <button class="btn secondary" style="margin-top: 20px; width: 100%;"
+                    onclick="closeSummaryModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Selective Data Clearing -->
+    <div id="clear-data-modal" class="modal hidden">
+        <div class="glass-panel modal-content" style="max-width: 450px;">
+            <header class="modal-header">
+                <h2>Limpar Dados do Banco</h2>
+                <button class="close-modal" onclick="closeClearDataModal()">&times;</button>
+            </header>
+            <div class="modal-body" style="padding: 20px;">
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px;">
+                    Selecione quais categorias de dados você deseja remover permanentemente do sistema:
+                </p>
+
+                <div class="clear-options-stack" style="display: flex; flex-direction: column; gap: 12px;">
+                    <label class="check-item" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="clear-actions" value="actions">
+                        <span>Ações (Registros e Ocorrências)</span>
+                    </label>
+                    <label class="check-item" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="clear-predicted" value="predicted">
+                        <span>Dados de Planejamento (Previsto)</span>
+                    </label>
+                    <label class="check-item" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="clear-realized" value="realized">
+                        <span>Dados de Operação (Realizado)</span>
+                    </label>
+                    <label class="check-item" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="clear-groups" value="groups">
+                        <span>Blocos (Deletar grupos existentes)</span>
+                    </label>
+                    <label class="check-item" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="clear-distribution" value="distribution">
+                        <span>Distribuição de Linhas (Manter blocos vazios)</span>
+                    </label>
+                </div>
+
+                <div class="warning-box"
+                    style="margin-top: 25px; padding: 15px; background: rgba(220, 38, 38, 0.1); border-left: 4px solid #dc2626; border-radius: 4px;">
+                    <p style="color: #ef4444; font-size: 0.8rem; font-weight: bold; margin: 0;">
+                        ATENÇÃO: Esta ação é irreversível. Os dados selecionados serão excluídos permanentemente.
+                    </p>
+                </div>
+
+                <div style="margin-top: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <button class="btn secondary" onclick="closeClearDataModal()">CANCELAR</button>
+                    <button class="btn danger" onclick="confirmClearData()">CONFIRMAR LIMPEZA</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=2.3.2"></script>
 </body>
 
 </html>

@@ -79,38 +79,66 @@ def init_db():
         UNIQUE(group_id, line_code)
     )''')
 
-    # Line Analyses / File Attachments Table
-    c.execute('''CREATE TABLE IF NOT EXISTS line_analyses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        line_code TEXT NOT NULL,
-        description TEXT,
-        filename TEXT,
-        original_filename TEXT,
-        author_id INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (author_id) REFERENCES users(id)
-    )''')
-
-    # Line Actions / Comments Table
-    c.execute('''CREATE TABLE IF NOT EXISTS line_actions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        line_code TEXT NOT NULL,
-        comment TEXT NOT NULL,
-        implementation_date TEXT, -- YYYY-MM-DD
-        author_id INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (author_id) REFERENCES users(id)
-    )''')
-
-    # Migration: Add impact_conclusion to line_actions
+    # Migration: Unified Events Table (Replaces Actions and Analyses)
     try:
-        c.execute("PRAGMA table_info('line_actions');")
-        cols = [col[1] for col in c.fetchall()]
-        if 'impact_conclusion' not in cols:
-            print("Adding impact_conclusion column to line_actions...")
-            c.execute("ALTER TABLE line_actions ADD COLUMN impact_conclusion TEXT;")
+        # Create line_events table first (safe - does nothing if already exists)
+        c.execute('''CREATE TABLE IF NOT EXISTS line_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            line_code TEXT NOT NULL,
+            type TEXT NOT NULL, -- 'ANALYSIS', 'ACTION', 'BOTH'
+            fact TEXT,
+            analysis_conclusion TEXT,
+            action_taken TEXT,
+            filename TEXT,
+            original_filename TEXT,
+            analyst TEXT,
+            implementation_date TEXT,
+            author_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (author_id) REFERENCES users(id)
+        )''')
+        
+        # Migration: Add 'cause' if missing
+        c.execute("PRAGMA table_info(line_events)")
+        existing_cols = [row[1] for row in c.fetchall()]
+        if 'cause' not in existing_cols:
+            c.execute("ALTER TABLE line_events ADD COLUMN cause TEXT")
+
+        # One-time migration: if old tables exist, copy data then drop them
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='line_analyses'")
+        if c.fetchone():
+            print("Migrating line_analyses -> line_events...")
+            c.execute("""
+                INSERT OR IGNORE INTO line_events
+                    (line_code, type, fact, analysis_conclusion, filename, original_filename, analyst, implementation_date, author_id, created_at)
+                SELECT
+                    line_code, 'ANALYSIS', comment, NULL, filename, COALESCE(original_filename, filename), analyst, implementation_date, author_id, created_at
+                FROM line_analyses
+            """)
+            c.execute("DROP TABLE line_analyses")
+            print("Migrated and dropped line_analyses.")
+
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='line_actions'")
+        if c.fetchone():
+            print("Migrating line_actions -> line_events...")
+            c.execute("""
+                INSERT OR IGNORE INTO line_events
+                    (line_code, type, fact, action_taken, analyst, implementation_date, author_id, created_at)
+                SELECT
+                    line_code, 'ACTION', comment, comment, analyst, implementation_date, author_id, created_at
+                FROM line_actions
+            """)
+            c.execute("DROP TABLE line_actions")
+            print("Migrated and dropped line_actions.")
+
     except Exception as e:
-        print(f"Migration Error (line_actions): {e}")
+        print(f"Migration Error (line_events): {e}")
+        import traceback
+        traceback.print_exc()
+
+
+    # Migration: Update UNIQUE constraint to include company
+
 
     # Migration: Update UNIQUE constraint to include company
     try:
@@ -232,6 +260,31 @@ def normalize_text(text):
     text = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
     return text.strip().upper()
 
+def pad_line_code(code):
+    """
+    Normalizes a line code:
+    - Removes 'A' prefix (common in some sources)
+    - Removes '.0' suffixes
+    - Pads numeric codes with zeros (zfill(3))
+    - Strips whitespace
+    """
+    if not code: return ""
+    code = str(code).strip()
+    
+    # Remove leading 'A' (e.g. A8000 -> 8000)
+    if code.upper().startswith('A') and len(code) > 1:
+        code = code[1:]
+    
+    # Remove decimal suffix (e.g. 8000.0 -> 8000)
+    if '.' in code:
+        code = code.split('.')[0]
+        
+    # If it's strictly numeric, pad to 3 digits minimum
+    if code.isdigit():
+        return code.zfill(3)
+        
+    return code
+
 def sanitize_numeric(val_str):
     """
     Handles Brasilian numeric formatting:
@@ -272,6 +325,11 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        # Prevent browsers from caching static files (JS, HTML, CSS)
+        if not self.path.startswith('/api/'):
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -348,48 +406,45 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 # Get filename to delete from disk
-                c.execute("SELECT filename FROM line_analyses WHERE id = ?", (analysis_id,))
+                c.execute("SELECT filename FROM line_events WHERE id = ?", (analysis_id,))
                 row = c.fetchone()
                 if row:
                     file_name = row['filename']
-                    print(f"[DEBUG] Found record, filename={file_name}")
+                    print(f"[DEBUG] Found record in line_events, filename={file_name}")
                     try:
                         file_path = os.path.join(UPLOAD_DIR, file_name)
                         if os.path.exists(file_path):
                             os.remove(file_path)
                             print(f"[DEBUG] File {file_path} removed from disk")
-                        else:
-                            print(f"[DEBUG] File {file_path} not found on disk")
                     except Exception as e:
                         print(f"[DEBUG] Error removing file: {e}")
                     
-                    c.execute("DELETE FROM line_analyses WHERE id = ?", (analysis_id,))
+                    c.execute("DELETE FROM line_events WHERE id = ?", (analysis_id,))
                     conn.commit()
-                    print(f"[DEBUG] Record deleted from DB")
                     conn.close()
                     
                     self.send_response(200)
                     self.end_headers()
                     self.wfile.write(b'{"success": true}')
                 else:
-                    print(f"[DEBUG] Record with id {analysis_id} not found in DB")
+                    print(f"[DEBUG] Record with id {analysis_id} not found in line_events")
                     conn.close()
                     self.send_response(404)
                     self.end_headers()
-                    self.wfile.write(b'Analysis record not found')
+                    self.wfile.write(b'Event not found')
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 self.send_error(500, str(e))
             return
 
-        if self.path.startswith('/api/line-actions'):
+        if self.path.startswith('/api/line-events'):
             try:
                 from urllib.parse import urlparse, parse_qs
                 parsed_url = urlparse(self.path)
                 params = parse_qs(parsed_url.query)
                 
-                action_id = int(params.get('id', [0])[0])
+                event_id = int(params.get('id', [0])[0])
                 user_id = int(params.get('userId', [0])[0])
 
                 conn = sqlite3.connect(DB_FILE)
@@ -405,7 +460,17 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     conn.close()
                     return
 
-                c.execute("DELETE FROM line_actions WHERE id = ?", (action_id,))
+                # Get filename to delete from disk
+                c.execute("SELECT filename FROM line_events WHERE id = ?", (event_id,))
+                row = c.fetchone()
+                if row and row['filename']:
+                    try:
+                        file_path = os.path.join(UPLOAD_DIR, row['filename'])
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                    except: pass
+                
+                c.execute("DELETE FROM line_events WHERE id = ?", (event_id,))
                 conn.commit()
                 conn.close()
                 self.send_response(200)
@@ -421,33 +486,47 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 post_data = self.rfile.read(content_length).decode('utf-8')
-                print(f"DEBUG: Clear Data Body: {post_data}")
                 data = json.loads(post_data)
                 user_id = data.get('userId')
+                targets = data.get('targets', [])  # List of strings: 'actions', 'predicted', 'realized', 'groups', 'distribution'
                 
                 conn = sqlite3.connect(DB_FILE)
-                conn.row_factory = sqlite3.Row
                 c = conn.cursor()
                 
                 # Security: Only MASTER can wipe
                 c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
                 user = c.fetchone()
-                print(f"DEBUG: User Role Check for ID {user_id}: {dict(user) if user else 'None'}")
-                if not user or user['role'] != 'MASTER':
+                if not user or user[0] != 'MASTER':
                     self.send_error(403, "Acesso Negado")
                     conn.close()
                     return
 
-                # Wipe performance data
-                c.execute("DELETE FROM bus_lines")
-                # Also wipe daily occurrences as they are tied to bus_line_id
-                c.execute("DELETE FROM occurrences")
+                if 'actions' in targets:
+                    c.execute("DELETE FROM line_events")
+                    c.execute("DELETE FROM occurrences")
+                
+                if 'predicted' in targets:
+                    c.execute("UPDATE bus_lines SET predicted_passengers = 0")
+                
+                if 'realized' in targets:
+                    c.execute("UPDATE bus_lines SET realized_passengers = 0")
+                
+                if 'groups' in targets:
+                    c.execute("DELETE FROM line_groups")
+                    # Cascade should handle members if ON DELETE CASCADE is set, but let's be safe
+                    c.execute("DELETE FROM line_group_members")
+                
+                if 'distribution' in targets and 'groups' not in targets:
+                    # If wiping distribution but keeping groups
+                    c.execute("DELETE FROM line_group_members")
+
                 conn.commit()
                 conn.close()
                 
                 self.send_response(200)
+                self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                self.wfile.write(b"Data cleared successfully")
+                self.wfile.write(json.dumps({"success": True, "message": "Dados limpos com sucesso"}).encode())
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -493,9 +572,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 c = conn.cursor()
                 
                 if data['action'] == 'add':
-                    c.execute("INSERT OR IGNORE INTO line_group_members (group_id, line_code) VALUES (?, ?)", (data['groupId'], data['lineCode']))
+                    c.execute("INSERT OR IGNORE INTO line_group_members (group_id, line_code) VALUES (?, ?)", (data['groupId'], pad_line_code(data['lineCode'])))
                 elif data['action'] == 'remove':
-                    c.execute("DELETE FROM line_group_members WHERE group_id = ? AND line_code = ?", (data['groupId'], data['lineCode']))
+                    c.execute("DELETE FROM line_group_members WHERE group_id = ? AND line_code = ?", (data['groupId'], pad_line_code(data['lineCode'])))
                     
                 conn.commit()
                 conn.close()
@@ -533,13 +612,11 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"success": False, "message": "Invalid credentials"}).encode())
             return
 
-        elif self.path == '/api/analysis':
+        elif self.path == '/api/line-events':
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 body = self.rfile.read(content_length)
                 
-                # Use email.parser to handle multipart/form-data
-                # We need to construct a dummy message with headers
                 headers_raw = "".join(f"{k}: {v}\r\n" for k, v in self.headers.items()).encode('iso-8859-1')
                 msg = email.parser.BytesParser(policy=email.policy.default).parsebytes(headers_raw + b"\r\n" + body)
 
@@ -548,9 +625,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 
                 if msg.is_multipart():
                     for part in msg.iter_parts():
-                        # Extract name from Content-Disposition
                         cdisp = part.get('Content-Disposition', '')
-                        # Simple name extraction
                         name = None
                         if 'name="' in cdisp:
                             name = cdisp.split('name="')[1].split('"')[0]
@@ -565,57 +640,64 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                         elif name:
                             form_data[name] = part.get_payload(decode=True).decode('utf-8', errors='ignore').strip()
 
-                line_code = form_data.get('line_code')
-                description = form_data.get('description', '')
+                event_id = form_data.get('id')
+                line_code_raw = form_data.get('line_code')
+                line_code = pad_line_code(line_code_raw) if line_code_raw else None
+                event_type = form_data.get('type')
+                fact = form_data.get('fact')
+                analysis_conclusion = form_data.get('analysis_conclusion')
+                action_taken = form_data.get('action_taken')
+                cause = form_data.get('cause')
+                analyst = form_data.get('analyst')
+                imp_date = form_data.get('implementation_date')
+                created_at = form_data.get('created_at')
                 author_id = form_data.get('author_id')
-                
+
+                internal_name = None
+                orig_name = None
+
                 if file_item and file_item['filename']:
                     orig_name = file_item['filename']
                     ext = os.path.splitext(orig_name)[1]
                     internal_name = f"{uuid.uuid4()}{ext}"
-                    
                     target_path = os.path.join(UPLOAD_DIR, internal_name)
                     with open(target_path, 'wb') as f:
                         f.write(file_item['payload'])
-                    
-                    conn = sqlite3.connect(DB_FILE)
-                    c = conn.cursor()
-                    c.execute("""
-                        INSERT INTO line_analyses (line_code, description, filename, original_filename, author_id)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (line_code, description, internal_name, orig_name, author_id))
-                    conn.commit()
-                    conn.close()
-                    
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"success": True}).encode())
-                    return
-                else:
-                    self.send_error(400, "No file uploaded")
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                self.send_error(500, str(e))
-            return
-
-        elif self.path == '/api/update-action-conclusion':
-            try:
-                content_length = int(self.headers.get('Content-Length', 0))
-                post_data = self.rfile.read(content_length).decode('utf-8')
-                data = json.loads(post_data)
-                
-                action_id = data.get('id')
-                conclusion = data.get('conclusion')
-                
-                if not action_id:
-                    self.send_error(400, "Action ID is required")
-                    return
 
                 conn = sqlite3.connect(DB_FILE)
                 c = conn.cursor()
-                c.execute("UPDATE line_actions SET impact_conclusion = ? WHERE id = ?", (conclusion, action_id))
+
+                if event_id:
+                    # Update Existing
+                    update_sql = """UPDATE line_events SET 
+                                 line_code=?, type=?, fact=?, analysis_conclusion=?, action_taken=?, cause=?, 
+                                 analyst=?, implementation_date=?"""
+                    params = [line_code, event_type, fact, analysis_conclusion, action_taken, cause, analyst, imp_date]
+                    
+                    if created_at:
+                        update_sql += ", created_at=?"
+                        params.append(created_at)
+                    
+                    if internal_name:
+                        update_sql += ", filename=?, original_filename=?"
+                        params.extend([internal_name, orig_name])
+                    
+                    update_sql += " WHERE id=?"
+                    params.append(event_id)
+                    c.execute(update_sql, params)
+                else:
+                    # Insert New
+                    if created_at:
+                        c.execute("""INSERT INTO line_events 
+                                     (line_code, type, fact, analysis_conclusion, action_taken, cause, analyst, implementation_date, filename, original_filename, author_id, created_at)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  (line_code, event_type, fact, analysis_conclusion, action_taken, cause, analyst, imp_date, internal_name, orig_name, author_id, created_at))
+                    else:
+                        c.execute("""INSERT INTO line_events 
+                                     (line_code, type, fact, analysis_conclusion, action_taken, cause, analyst, implementation_date, filename, original_filename, author_id)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  (line_code, event_type, fact, analysis_conclusion, action_taken, cause, analyst, imp_date, internal_name, orig_name, author_id))
+
                 conn.commit()
                 conn.close()
                 
@@ -624,8 +706,11 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": True}).encode())
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self.send_error(500, str(e))
             return
+
 
         elif self.path == '/api/line-actions':
             try:
@@ -637,6 +722,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 comment = data.get('comment')
                 imp_date = data.get('implementation_date')
                 author_id = data.get('author_id')
+                analyst = data.get('analyst', '')
                 
                 if not line_code or not comment:
                     self.send_error(400, "Missing data")
@@ -645,9 +731,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn = sqlite3.connect(DB_FILE)
                 c = conn.cursor()
                 c.execute("""
-                    INSERT INTO line_actions (line_code, comment, implementation_date, author_id)
-                    VALUES (?, ?, ?, ?)
-                """, (line_code, comment, imp_date, author_id))
+                    INSERT INTO line_actions (line_code, comment, implementation_date, author_id, analyst)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (line_code, comment, imp_date, author_id, analyst))
                 conn.commit()
                 conn.close()
                 
@@ -712,7 +798,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({"message": "Import sucessful"}).encode())
+            self.wfile.write(json.dumps({"message": "Import successful"}).encode())
             
         except Exception as e:
             print(f"Error importing: {e}")
@@ -724,20 +810,19 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
             except: pass
 
-    # ... do_GET remains ...
-
     def do_GET(self):
         import sys
-        print(f"DEBUG: INCOMING GET REQUEST Path='{self.path}'", file=sys.stderr)
+        from urllib.parse import urlparse, parse_qs
         
-        # Debug Endpoint to inspect DB Data
-        if self.path.startswith('/api/debug-data'):
-             # ... (existing content) ...
-             pass # Kept brief for matching context, actually I should include the whole block or just insert before it. 
-             # Wait, I can insert BEFORE /api/debug-data or AFTER it.
-             # Let's insert BEFORE /api/lines check.
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
+        params = parse_qs(parsed_url.query)
+        
+        print(f"DEBUG: INCOMING GET REQUEST Path='{path}'", file=sys.stderr)
+        
 
-        if self.path == '/api/groups':
+
+        if path == '/api/groups':
             try:
                 conn = sqlite3.connect(DB_FILE)
                 conn.row_factory = sqlite3.Row
@@ -763,11 +848,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(str(e).encode())
             return
 
-        if self.path.startswith('/api/analysis/download'):
+        if path == '/api/analysis/download':
             try:
-                from urllib.parse import urlparse, parse_qs
-                parsed_url = urlparse(self.path)
-                params = parse_qs(parsed_url.query)
                 analysis_id = params.get('id', [None])[0]
                 
                 if not analysis_id:
@@ -777,7 +859,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 conn = sqlite3.connect(DB_FILE)
                 conn.row_factory = sqlite3.Row
                 c = conn.cursor()
-                c.execute("SELECT filename, original_filename FROM line_analyses WHERE id = ?", (analysis_id,))
+                c.execute("SELECT filename, original_filename FROM line_events WHERE id = ?", (analysis_id,))
                 row = c.fetchone()
                 conn.close()
 
@@ -801,22 +883,30 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(500, str(e))
             return
 
-        if self.path.startswith('/api/analysis'):
+        if path == '/api/line-events':
             try:
-                from urllib.parse import urlparse, parse_qs
-                parsed_url = urlparse(self.path)
-                params = parse_qs(parsed_url.query)
                 line_code = params.get('line_code', [None])[0]
+                start = params.get('start', [None])[0]
+                end = params.get('end', [None])[0]
                 
                 conn = sqlite3.connect(DB_FILE)
                 conn.row_factory = sqlite3.Row
                 c = conn.cursor()
                 
-                if line_code:
-                    c.execute("SELECT * FROM line_analyses WHERE line_code = ? ORDER BY created_at DESC", (line_code,))
-                else:
-                    c.execute("SELECT * FROM line_analyses ORDER BY created_at DESC")
+                query = "SELECT * FROM line_events WHERE 1=1"
+                sql_params = []
                 
+                if line_code:
+                    query += " AND line_code = ?"
+                    sql_params.append(line_code)
+                
+                if start and end:
+                    query += " AND (implementation_date BETWEEN ? AND ? OR implementation_date IS NULL OR implementation_date = '')"
+                    sql_params.extend([start, end])
+                
+                query += " ORDER BY CASE WHEN implementation_date IS NULL OR implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(implementation_date, ''), created_at) DESC, created_at DESC"
+                
+                c.execute(query, sql_params)
                 rows = c.fetchall()
                 conn.close()
                 
@@ -829,40 +919,10 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(500, str(e))
             return
 
-        if self.path.startswith('/api/line-actions'):
+        if path == '/api/action-impact':
             try:
-                from urllib.parse import urlparse, parse_qs
-                parsed_url = urlparse(self.path)
-                params = parse_qs(parsed_url.query)
-                line_code = params.get('line_code', [None])[0]
-                
-                conn = sqlite3.connect(DB_FILE)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                
-                if line_code:
-                    c.execute("SELECT * FROM line_actions WHERE line_code = ? ORDER BY created_at DESC", (line_code,))
-                else:
-                    c.execute("SELECT * FROM line_actions ORDER BY created_at DESC")
-                
-                rows = c.fetchall()
-                conn.close()
-                
-                data = [dict(row) for row in rows]
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps(data, default=str).encode())
-            except Exception as e:
-                self.send_error(500, str(e))
-            return
-
-        if self.path.startswith('/api/action-impact'):
-            try:
-                from urllib.parse import urlparse, parse_qs
-                parsed_url = urlparse(self.path)
-                params = parse_qs(parsed_url.query)
-                line_code = params.get('line_code', [None])[0]
+                line_code_raw = params.get('line_code', [None])[0]
+                line_code = pad_line_code(line_code_raw) if line_code_raw else None
                 base_date_str = params.get('base_date', [None])[0] # YYYY-MM-DD
                 window = int(params.get('window', [7])[0])
 
@@ -872,14 +932,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 base_date = datetime.strptime(base_date_str, '%Y-%m-%d')
                 
-                # Weekday Alignment Fix:
-                # The 'Before' start date should be shifted back by a multiple of 7 days
-                # that is at least the size of the window. This ensures Monday is compared with Monday, etc.
                 shift_days = ((window + 6) // 7) * 7
                 before_start_dt = base_date - timedelta(days=shift_days)
                 before_start = before_start_dt.strftime('%Y-%m-%d')
-                
-                # Range After: [base_date, base_date + window - 1]
                 after_start = base_date.strftime('%Y-%m-%d')
 
                 conn = sqlite3.connect(DB_FILE)
@@ -887,9 +942,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 c = conn.cursor()
 
                 def get_daily_stats(start_date, num_days):
-                    # We want exactly num_days starting from start_date
                     dates = [(datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(num_days)]
-                    
                     data = []
                     for dt in dates:
                         c.execute("SELECT realized_passengers FROM bus_lines WHERE line_code = ? AND date = ?", (line_code, dt))
@@ -900,10 +953,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
 
                 before_data = get_daily_stats(before_start, window)
                 after_data = get_daily_stats(after_start, window)
-                
                 conn.close()
 
-                # Calculate averages for the summary
                 avg_before = sum(d['val'] for d in before_data) / window if window > 0 else 0
                 avg_after = sum(d['val'] for d in after_data) / window if window > 0 else 0
 
@@ -920,12 +971,11 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(impact_data).encode())
             except Exception as e:
-                import traceback
                 traceback.print_exc()
                 self.send_error(500, str(e))
             return
 
-        if self.path == '/api/available-lines':
+        if path == '/api/available-lines':
             try:
                 conn = sqlite3.connect(DB_FILE)
                 c = conn.cursor()
@@ -941,7 +991,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(str(e).encode())
             return
 
-        if self.path.startswith('/api/debug-data'):
+        if path == '/api/debug-data':
              try:
                  conn = sqlite3.connect(DB_FILE)
                  c = conn.cursor()
@@ -963,20 +1013,19 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                  self.wfile.write(str(e).encode())
              return
 
-        if self.path.startswith('/api/lines'):
+        if path == '/api/lines':
             try:
-                print(f"DEBUG: Processing GET {self.path}", file=sys.stderr)
-                
-                # Manual Parsing to ensure no lib weirdness
-                from urllib.parse import urlparse, parse_qs
-                parsed_url = urlparse(self.path)
-                params = parse_qs(parsed_url.query)
-                
                 start_raw = params.get('start', [None])[0]
                 end_raw = params.get('end', [None])[0]
-                line_code_filter = params.get('line_code', [None])[0]
                 
-                print(f"DEBUG: Parsed Params -> Start: '{start_raw}', End: '{end_raw}', LineFilter: '{line_code_filter}'", file=sys.stderr)
+                # Support multiple lines: ?line_code=8000&line_code=8001 OR ?line_code=8000,8001
+                line_code_params = params.get('line_code', [])
+                target_codes = []
+                for p in line_code_params:
+                    if p:
+                        for part in p.split(','):
+                            padded = pad_line_code(part.strip())
+                            if padded: target_codes.append(padded)
 
                 conn = sqlite3.connect(DB_FILE)
                 conn.row_factory = sqlite3.Row
@@ -985,28 +1034,23 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 query = "SELECT * FROM bus_lines WHERE 1=1"
                 args = []
                 
-                if line_code_filter:
-                    query += " AND line_code = ?"
-                    args.append(line_code_filter)
+                if target_codes:
+                    placeholders = ','.join(['?'] * len(target_codes))
+                    query += f" AND line_code IN ({placeholders})"
+                    args.extend(target_codes)
 
-                # Paranoid Check
                 has_start = start_raw is not None and start_raw != '' and start_raw != 'undefined'
                 has_end = end_raw is not None and end_raw != '' and end_raw != 'undefined'
 
                 if has_start and has_end:
                     query += " AND date >= ? AND date <= ?"
                     args.extend([start_raw, end_raw])
-                    print(f"DEBUG: APPLIED FILTER: {query} with {args}", file=sys.stderr)
-                else:
-                    print("DEBUG: SKIPPED FILTER: One or both params missing/invalid.", file=sys.stderr)
                 
                 query += " ORDER BY date DESC, line_code ASC"
                 
                 c.execute(query, args)
                 rows = c.fetchall()
                 conn.close()
-                
-                print(f"DEBUG: Query returned {len(rows)} rows.", file=sys.stderr)
                 
                 data = [dict(row) for row in rows]
                 self.send_response(200)
@@ -1017,14 +1061,17 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 print(f"DEBUG: ERROR in do_GET: {e}", file=sys.stderr)
                 import traceback
                 traceback.print_exc()
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
             return
-        from urllib.parse import urlparse, parse_qs
-        parsed_url = urlparse(self.path)
-        path = parsed_url.path
-        params = parse_qs(parsed_url.query)
 
         if path == '/api/export-group':
             self.handle_export_group(params)
+            return
+
+        if path == '/api/export-actions':
+            self.handle_export_actions(params)
             return
 
         if path == '/api/global-actions-impact':
@@ -1036,11 +1083,18 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         # Serve static files from 'static' directory if not an API route
-        if self.path == '/' or self.path == '':
-            self.path = '/static/index.html'
-        elif not self.path.startswith('/static/'):
-             self.path = '/static' + self.path
-             
+        if path == '/' or path == '':
+            full_path = 'static/index.html'
+        elif path.startswith('/static/'):
+            full_path = path[1:] # remove leading slash
+        else:
+            full_path = 'static' + path
+        
+        # Check if file exists, if not, try appending to static
+        if not os.path.exists(full_path) and not path.startswith('/static/'):
+             full_path = 'static' + path
+
+        self.path = '/' + full_path
         super().do_GET()
 
 
@@ -1488,6 +1542,97 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(f"Erro ao gerar Excel: {str(e)}".encode())
 
+    def handle_export_actions(self, params):
+        start = params.get('start', [None])[0]
+        end = params.get('end', [None])[0]
+        
+        if not start or not end:
+            self.send_error(400, "Período não selecionado")
+            return
+
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            
+            # Query joined data
+            query = """
+                SELECT 
+                    e.created_at, 
+                    e.implementation_date, 
+                    g.name as group_name,
+                    e.line_code, 
+                    e.fact, 
+                    e.cause, 
+                    e.action_taken, 
+                    e.analysis_conclusion, 
+                    e.analyst
+                FROM line_events e
+                LEFT JOIN line_group_members m ON e.line_code = m.line_code
+                LEFT JOIN line_groups g ON m.group_id = g.id
+                WHERE (e.implementation_date BETWEEN ? AND ? OR e.implementation_date IS NULL OR e.implementation_date = '')
+                ORDER BY CASE WHEN e.implementation_date IS NULL OR e.implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(e.implementation_date, ''), e.created_at) DESC, e.created_at DESC
+            """
+            c.execute(query, (start, end))
+            rows = c.fetchall()
+            conn.close()
+
+            if not rows:
+                self.send_error(404, "Nenhuma ação encontrada para este período")
+                return
+
+            # Column names in Portuguese for the Excel
+            cols = [
+                'DATA CADASTRO', 'DATA AÇÃO', 'GRUPO', 'LINHA', 
+                'FATO', 'CAUSA', 'AÇÃO', 'ANÁLISE', 'NOME'
+            ]
+            
+            # Clean data (format dates and sanitize strings)
+            clean_rows = []
+            for r in rows:
+                row_list = list(r)
+                for i in range(len(row_list)):
+                    if i in [0, 1]:
+                        # Format created_at and implementation_date to DD/MM/YYYY if they look like YYYY-MM-DD
+                        if row_list[i] and '-' in str(row_list[i]):
+                            parts = str(row_list[i]).split(' ')[0].split('-')
+                            if len(parts) == 3:
+                                row_list[i] = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                    elif isinstance(row_list[i], str):
+                        # Sanitize strings to remove newlines, multiple spaces
+                        row_list[i] = ' '.join(row_list[i].split())
+                clean_rows.append(row_list)
+
+            df = pd.DataFrame(clean_rows, columns=cols)
+            
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Ações', index=False)
+                
+                # Auto-adjust column widths
+                worksheet = writer.sheets['Ações']
+                for idx, col in enumerate(df.columns):
+                    series = df[col]
+                    max_len = max((
+                        series.astype(str).map(len).max(),
+                        len(str(series.name))
+                    )) + 2
+                    worksheet.column_dimensions[chr(65 + idx)].width = min(max_len, 50)
+
+            excel_data = output.getvalue()
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            self.send_header('Content-Disposition', f'attachment; filename="Export_Acoes_{start}_a_{end}.xlsx"')
+            self.send_header('Content-Length', len(excel_data))
+            self.end_headers()
+            self.wfile.write(excel_data)
+
+        except Exception as e:
+            print(f"Actions Export Error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_error(500, str(e))
+
     def handle_global_actions_impact(self):
         try:
             from urllib.parse import urlparse, parse_qs
@@ -1496,13 +1641,27 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             
             start_filter = params.get('start', [None])[0]
             end_filter = params.get('end', [None])[0]
+            
+            # Robust collection of all line codes from all 'line' parameters
+            line_filters = params.get('line', [])
+            all_line_codes = []
+            for f in line_filters:
+                if f:
+                    # Split and track each code after padding
+                    for lc in f.split(','):
+                        if lc.strip():
+                            padded = pad_line_code(lc.strip())
+                            if padded and padded.lower() != 'all':
+                                all_line_codes.append(padded)
+            
+            print(f"DEBUG Impact API -> Start: {start_filter}, End: {end_filter}, Lines: {all_line_codes}")
 
             conn = sqlite3.connect(DB_FILE)
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
             
-            # 1. Get filtered actions
-            query = "SELECT * FROM line_actions WHERE 1=1"
+            # 1. Get filtered events (Actions)
+            query = "SELECT * FROM line_events WHERE (type = 'ACTION' OR type = 'BOTH')"
             args = []
             if start_filter:
                 query += " AND implementation_date >= ?"
@@ -1511,7 +1670,12 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 query += " AND implementation_date <= ?"
                 args.append(end_filter)
             
-            query += " ORDER BY implementation_date DESC, created_at DESC"
+            if all_line_codes:
+                placeholders = ','.join(['?'] * len(all_line_codes))
+                query += f" AND line_code IN ({placeholders})"
+                args.extend(all_line_codes)
+            
+            query += " ORDER BY CASE WHEN implementation_date IS NULL OR implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(implementation_date, ''), created_at) DESC, created_at DESC"
             c.execute(query, tuple(args))
             actions = c.fetchall()
             
@@ -1551,8 +1715,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     "id": action['id'],
                     "line_code": line_code,
                     "date": base_date_str,
-                    "action_type": "Ação Operacional", # Column doesn't exist in DB yet
-                    "comment": action['comment'],
+                    "action_type": action['type'],
+                    "comment": action['action_taken'] or action['fact'],
                     "avg_before": round(avg_before, 1),
                     "avg_after": round(avg_after, 1),
                     "diff": round(diff, 1),

@@ -1,13 +1,52 @@
-// State
 const state = {
     user: JSON.parse(localStorage.getItem('bus_user')) || null,
     lines: [],
     availableLineCodes: [],
+    impactSelectedLines: new Set(),
     groups: [],
     selectedGroupId: null,
     lastActions: [],
-    lastDetailData: []
+    lastEvents: [],
+    lastDetailData: [],
+    macroFilterGroupId: null
 };
+
+const APP_VERSION = "2.3.2";
+let lastProcessedHash = null;
+
+window.onerror = function (msg, url, lineNo, columnNo, error) {
+    console.error(`[CORE v${APP_VERSION}] ERRO GLOBAL:`, msg, 'linha', lineNo);
+    return false;
+};
+
+function showNotification(message, type = 'info') {
+    const container = document.getElementById('notification-container');
+    if (!container) return;
+
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+
+    let icon = 'info-circle';
+    if (type === 'success') icon = 'check-circle';
+    if (type === 'error') icon = 'exclamation-circle';
+
+    notification.innerHTML = `
+        <i class="fas fa-${icon}"></i>
+        <span>${message}</span>
+    `;
+
+    container.appendChild(notification);
+
+    // Trigger animation
+    setTimeout(() => notification.classList.add('show'), 10);
+
+    // Remove after 4s
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 4000);
+}
+window.showNotification = showNotification;
 
 let currentAnalysisLine = null;
 window.currentActionsLine = null;
@@ -26,28 +65,31 @@ document.addEventListener('DOMContentLoaded', () => {
 function init() {
     const savedUser = localStorage.getItem('bus_user');
 
-    // Set Default Dates (First day of current month to Today)
+    // Set Default Dates (Last 7 days to Today)
     const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 7);
 
     if (document.getElementById('start-date')) {
-        document.getElementById('start-date').valueAsDate = firstDay;
+        document.getElementById('start-date').valueAsDate = lastWeek;
         document.getElementById('end-date').valueAsDate = today;
     }
 
     if (document.getElementById('impact-start-date')) {
-        document.getElementById('impact-start-date').valueAsDate = firstDay;
+        document.getElementById('impact-start-date').valueAsDate = lastWeek;
         document.getElementById('impact-end-date').valueAsDate = today;
     }
 
     if (savedUser) {
         state.user = JSON.parse(savedUser);
         showDashboard();
-        // Sync view with hash on load
-        handleNavigation();
     } else {
         showLogin();
     }
+
+    // Display version
+    const versionEl = document.getElementById('app-version-indicator');
+    if (versionEl) versionEl.textContent = `v${APP_VERSION}`;
 
     setupEventListeners();
 }
@@ -91,7 +133,7 @@ function setupEventListeners() {
     const backBtn = document.getElementById('btn-back-groups');
     if (backBtn) {
         backBtn.addEventListener('click', () => {
-            window.location.hash = 'operacional';
+            window.location.hash = '#operacional';
         });
     }
 
@@ -127,23 +169,17 @@ function setupEventListeners() {
         };
     }
 
+    const clearDataBtn = document.getElementById('btn-open-clear-data');
+    if (clearDataBtn) {
+        clearDataBtn.addEventListener('click', openClearDataModal);
+    }
+
     const selectionSearch = document.getElementById('search-selection-lines');
     if (selectionSearch) {
         selectionSearch.addEventListener('input', renderSelectionGrid);
     }
 
-    // Unified Modal Logic
-    const saveActionBtn = document.getElementById('btn-save-action');
-    if (saveActionBtn) {
-        saveActionBtn.onclick = handleSaveAction;
-    }
 
-    const uploadAnalysisBtn = document.getElementById('btn-upload-analysis');
-    if (uploadAnalysisBtn) {
-        uploadAnalysisBtn.onclick = handleAnalysisUpload;
-    }
-
-    setupAnalysisUI();
 
     // Setup Uploads
     setupUpload('csv-upload', '/api/import-csv');
@@ -154,42 +190,141 @@ function setupEventListeners() {
         exportBtn.onclick = exportGroupToExcel;
     }
 
-    // Default view: ONLY if no hash exists
-    if (!window.location.hash) {
-        switchMainTab('macro');
-    }
+    // Initial navigation — always respect the real URL hash
+    handleNavigation(true);
 
-    // Hash Navigation
+    // Hash Navigation - Native Events + Active Watchdog (Fail-safe)
     window.addEventListener('hashchange', handleNavigation);
+    window.addEventListener('popstate', handleNavigation);
+
+    // Watchdog Polling (Anti-freeze) - only activates after first navigation
+    setInterval(() => {
+        if (lastProcessedHash === null) return; // Not yet initialized
+        const currentHash = window.location.hash || '#macro';
+        if (currentHash !== lastProcessedHash) {
+            console.log(`[CORE v${APP_VERSION}] Watchdog detected hash drift: ${lastProcessedHash} -> ${currentHash}`);
+            handleNavigation();
+        }
+    }, 200);
+
+    // Operational Search
+    setupOperationalSearch();
 }
 
-function handleNavigation() {
-    const hash = window.location.hash || '#macro';
+function setupOperationalSearch() {
+    const input = document.getElementById('operational-search-input');
+    const resultsContainer = document.getElementById('operational-search-results');
 
-    if (hash === '#macro') {
-        applyView('macro');
-        exitGroupUI(); // Hide operational tables if switching TO macro
-    } else if (hash === '#operacional') {
-        applyView('operacional');
-        exitGroupUI();
-    } else if (hash === '#impacto') {
-        applyView('impacto');
-        exitGroupUI();
-    } else if (hash.startsWith('#group-')) {
-        const groupId = parseInt(hash.split('-')[1]);
-        const group = state.groups.find(g => g.id === groupId);
-        if (group) {
-            applyView('operacional');
-            enterGroupUI(group);
-        } else {
-            // Group not found, fallback to operational list
-            window.location.hash = '#operacional';
+    if (!input || !resultsContainer) return;
+
+    input.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        if (query.length < 2) {
+            resultsContainer.classList.add('hidden');
+            return;
         }
-    } else {
-        // Fallback for unknown hashes
-        window.location.hash = '#macro';
+
+        const lines = state.lines || [];
+        // Unique lines by code
+        const uniqueLines = Array.from(new Set(lines.map(l => l.line_code)))
+            .map(code => lines.find(l => l.line_code === code));
+
+        const matches = uniqueLines.filter(l =>
+            l.line_code.toLowerCase().includes(query) ||
+            (l.line_name && l.line_name.toLowerCase().includes(query))
+        );
+
+        if (matches.length > 0) {
+            resultsContainer.innerHTML = matches.map(l => {
+                const group = (state.groups || []).find(g => g.lines && g.lines.includes(l.line_code));
+                const groupBadge = group
+                    ? `<span style="font-size:0.65rem;background:rgba(59,130,246,0.15);color:var(--primary-color);border:1px solid rgba(59,130,246,0.3);border-radius:4px;padding:1px 6px;margin-left:6px;">${group.name}</span>`
+                    : `<span style="font-size:0.65rem;color:var(--text-muted);margin-left:6px;">Sem grupo</span>`;
+                return `
+                <div class="search-result-item" onclick="window.openLineDetail('${l.line_code}'); window.clearOperationalSearch()">
+                    <div>
+                        <span style="font-weight: bold; color: var(--primary-color)">${l.line_code}</span>
+                        <small style="margin-left: 8px;">${l.line_name || ''}</small>
+                        ${groupBadge}
+                    </div>
+                    <small>Ver Análise</small>
+                </div>`;
+            }).join('');
+            resultsContainer.classList.remove('hidden');
+        } else {
+            resultsContainer.innerHTML = '<div style="padding: 12px; color: var(--text-muted); text-align: center;">Nenhuma linha encontrada</div>';
+            resultsContainer.classList.remove('hidden');
+        }
+    });
+
+    // Close on click outside
+    document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !resultsContainer.contains(e.target)) {
+            resultsContainer.classList.add('hidden');
+        }
+    });
+
+    // Close on escape
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            resultsContainer.classList.add('hidden');
+            input.blur();
+        }
+    });
+}
+
+window.clearOperationalSearch = function () {
+    const input = document.getElementById('operational-search-input');
+    const resultsContainer = document.getElementById('operational-search-results');
+    if (input) input.value = '';
+    if (resultsContainer) resultsContainer.classList.add('hidden');
+};
+
+function handleNavigation(force) {
+    try {
+        const hash = window.location.hash || '#macro';
+        if (!force && hash === lastProcessedHash) return; // Prevent loop
+
+        lastProcessedHash = hash;
+        console.log(`[CORE v${APP_VERSION}] handleNavigation executing for:`, hash);
+
+        if (hash === '#macro') {
+            applyView('macro');
+            exitGroupUI();
+        } else if (hash === '#operacional') {
+            applyView('operacional');
+            exitGroupUI();
+        } else if (hash === '#impacto') {
+            applyView('impacto');
+            exitGroupUI();
+        } else if (hash === '#acoes') {
+            applyView('acoes');
+            exitGroupUI();
+        } else if (hash.startsWith('#group-')) {
+            const groupId = parseInt(hash.split('-')[1]);
+            const group = state.groups.find(g => g.id === groupId);
+            if (group) {
+                applyView('operacional');
+                enterGroupUI(group);
+            } else {
+                console.warn(`[CORE v${APP_VERSION}] Group ${groupId} not in memory, sync required`);
+                // Fallback attempt: if we have groups but not this one, maybe it was deleted
+                if (state.groups.length > 0) {
+                    window.location.hash = '#operacional';
+                }
+            }
+        } else if (hash.startsWith('#detail-')) {
+            const lineCode = hash.split('-')[1];
+            openLineDetail(lineCode, true); // called from URL navigation
+        } else {
+            console.warn(`[CORE v${APP_VERSION}] Unknown route: ${hash}`);
+            window.location.hash = '#macro';
+        }
+    } catch (err) {
+        console.error(`[CORE v${APP_VERSION}] CRITICAL NAV ERROR:`, err);
     }
 }
+window.handleNavigation = handleNavigation;
 
 function enterGroupUI(group) {
     state.selectedGroupId = group.id;
@@ -210,12 +345,11 @@ function enterGroupUI(group) {
 }
 
 function exitGroupUI() {
+    console.log("exitGroupUI: restoring operational main UI");
     state.selectedGroupId = null;
-    const titleEl = document.getElementById('dashboard-title');
 
-    // Title is set by applyView if we are just switching tabs, 
-    // but if we are in Operational tab and just clearing group, we reset it.
-    if (window.location.hash === '#operacional' && titleEl) {
+    const titleEl = document.getElementById('dashboard-title');
+    if (titleEl && window.location.hash === '#operacional') {
         titleEl.textContent = 'Visão Geral da Operação';
     }
 
@@ -305,52 +439,86 @@ async function exportGroupToExcel(e) {
 }
 
 function switchMainTab(tab) {
-    if (tab === 'macro') window.location.hash = 'macro';
-    else if (tab === 'operacional') window.location.hash = 'operacional';
-    else if (tab === 'impacto') window.location.hash = 'impacto';
+    console.log(`[v${APP_VERSION}] switchMainTab requested:`, tab);
+    window.location.hash = '#' + tab;
 }
+window.switchMainTab = switchMainTab;
 
 function applyView(tab) {
+    console.log("DEBUG: applyView entering for:", tab);
+    if (!tab) return;
+    state.currentView = tab;
+
     const macroTab = document.getElementById('tab-macro');
     const operTab = document.getElementById('tab-operacional');
     const impactTab = document.getElementById('tab-impacto');
+    const acoesTab = document.getElementById('tab-acoes');
     const macroContent = document.getElementById('macro-tab-content');
     const operContent = document.getElementById('operational-tab-content');
     const impactContent = document.getElementById('impact-tab-content');
+    const acoesContent = document.getElementById('acoes-tab-content');
     const title = document.getElementById('dashboard-title');
+    const searchContainer = document.getElementById('operational-search-container');
+
+    console.log("DEBUG: Tab elements find status:", {
+        macroTab: !!macroTab,
+        operTab: !!operTab,
+        impactTab: !!impactTab,
+        acoesTab: !!acoesTab,
+        macroContent: !!macroContent,
+        operContent: !!operContent,
+        impactContent: !!impactContent,
+        acoesContent: !!acoesContent
+    });
 
     // Reset visibility
-    [macroTab, operTab, impactTab].forEach(t => t?.classList.remove('active'));
-    [macroContent, operContent, impactContent].forEach(c => c?.classList.add('hidden'));
+    [macroTab, operTab, impactTab, acoesTab].forEach(t => t?.classList.remove('active'));
+    [macroContent, operContent, impactContent, acoesContent].forEach(c => c?.classList.add('hidden'));
+
+    if (searchContainer) searchContainer.classList.add('hidden');
 
     if (tab === 'macro') {
-        macroTab.classList.add('active');
-        macroContent.classList.remove('hidden');
-        title.textContent = 'Panorama Macro';
-
-        // Show global filter toolbar
+        macroTab?.classList.add('active');
+        macroContent?.classList.remove('hidden');
+        if (title) title.textContent = 'Panorama Macro';
         const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
         if (globalToolbar) globalToolbar.style.display = 'flex';
-
         renderMacroDashboard();
     } else if (tab === 'operacional') {
         operTab?.classList.add('active');
         operContent?.classList.remove('hidden');
-        title.textContent = 'Visão Geral da Operação';
-        // Restore global toolbar if it was hidden
+        if (title) title.textContent = 'Visão Geral da Operação';
         const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
         if (globalToolbar) globalToolbar.style.display = 'flex';
-        renderGroups(); // Assuming renderGroups() is the equivalent of renderOperationalTable() for this context
+        if (searchContainer) searchContainer.classList.remove('hidden');
+        renderGroups();
     } else if (tab === 'impacto') {
         impactTab?.classList.add('active');
         impactContent?.classList.remove('hidden');
-        title.textContent = 'Relatórios de Impacto';
-
-        // Hide global filter toolbar if on Impact tab to avoid confusion
+        if (title) title.textContent = 'Relatórios de Impacto';
+        const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
+        if (globalToolbar) globalToolbar.style.display = 'none'; // Individual filters are used here
+        renderImpactPage();
+    } else if (tab === 'acoes') {
+        acoesTab?.classList.add('active');
+        acoesContent?.classList.remove('hidden');
+        if (title) title.textContent = 'Gestão de Ações';
         const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
         if (globalToolbar) globalToolbar.style.display = 'none';
 
-        renderImpactPage();
+        // Initialize action filters if empty
+        const startInput = document.getElementById('actions-filter-start');
+        const endInput = document.getElementById('actions-filter-end');
+        if (startInput && endInput && !startInput.value) {
+            const today = new Date();
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(today.getDate() - 7);
+
+            startInput.value = sevenDaysAgo.toISOString().split('T')[0];
+            endInput.value = today.toISOString().split('T')[0];
+        }
+
+        renderActionsTab();
     }
 }
 
@@ -359,17 +527,33 @@ async function renderImpactPage() {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 20px;">Carregando histórico de impacto...</td></tr>';
 
+    // Ensure available lines are loaded for the filter
+    if (state.availableLineCodes.length === 0) {
+        await fetchAvailableLines();
+    } else {
+        // Even if loaded, ensure filter dropdown is populated (it might have been cleared or not injected yet)
+        populateImpactLineFilter();
+    }
+
     const start = document.getElementById('impact-start-date').value;
     const end = document.getElementById('impact-end-date').value;
+
+    // Multi-line selection from state
+    const selectedLines = state.impactSelectedLines ? Array.from(state.impactSelectedLines) : [];
 
     try {
         let url = '/api/global-actions-impact';
         const params = new URLSearchParams();
         if (start) params.append('start', start);
         if (end) params.append('end', end);
+        if (selectedLines.length > 0) params.append('line', selectedLines.join(','));
         if (params.toString()) url += `?${params.toString()}`;
 
         const response = await fetch(url);
+        if (!response.ok) {
+            console.error(`Fetch error ${response.status} for ${url}`);
+            throw new Error(`Erro na API: ${response.status}`);
+        }
         const data = await response.json();
 
         if (data.length === 0) {
@@ -393,9 +577,10 @@ async function renderImpactPage() {
             avgImprovementEl.textContent = `${avgVariation > 0 ? '+' : ''}${avgVariation}%`;
             const card = avgImprovementEl.closest('.kpi-card');
             if (card) {
-                card.classList.remove('success', 'danger');
+                card.classList.remove('success', 'danger', 'stable');
                 if (avgVariation > 2) card.classList.add('success');
                 else if (avgVariation < -2) card.classList.add('danger');
+                else card.classList.add('stable');
             }
             // Update label too
             const labelEl = avgImprovementEl.previousElementSibling;
@@ -408,9 +593,10 @@ async function renderImpactPage() {
 
         const systemicCard = document.getElementById('card-systemic-impact');
         if (systemicCard) {
-            systemicCard.classList.remove('success', 'danger');
-            if (totalSystemicImpact > 0) systemicCard.classList.add('success');
-            else if (totalSystemicImpact < 0) systemicCard.classList.add('danger');
+            systemicCard.classList.remove('success', 'danger', 'stable');
+            if (totalSystemicImpact > 50) systemicCard.classList.add('success');
+            else if (totalSystemicImpact < -50) systemicCard.classList.add('danger');
+            else systemicCard.classList.add('stable');
         }
 
         tbody.innerHTML = '';
@@ -418,10 +604,20 @@ async function renderImpactPage() {
             const row = document.createElement('tr');
 
             let statusClass = 'label-stable';
-            if (item.status === 'Melhorou') statusClass = 'label-success';
-            if (item.status === 'Piorou') statusClass = 'label-danger';
+            let arrow = '―';
+            if (item.status === 'Melhorou') {
+                statusClass = 'label-success';
+                arrow = '↑';
+            } else if (item.status === 'Piorou') {
+                statusClass = 'label-danger';
+                arrow = '↓';
+            } else {
+                statusClass = 'label-stable';
+                arrow = '―';
+            }
 
-            const impactClass = item.diff > 0 ? 'diff-positive' : (item.diff < 0 ? 'diff-negative' : '');
+            const impactClass = (arrow === '↑') ? 'diff-positive' :
+                (arrow === '↓' ? 'diff-negative' : 'diff-stable');
 
             row.onclick = () => openComparativeImpact(item.line_code, item.date, item.comment);
             row.style.cursor = 'pointer';
@@ -431,10 +627,10 @@ async function renderImpactPage() {
                 <td><strong>${item.line_code}</strong></td>
                 <td>${item.date}</td>
                 <td style="font-size: 0.8rem;">${item.comment || 'Ação Operacional'}</td>
-                <td>${item.avg_before}</td>
-                <td>${item.avg_after}</td>
-                <td class="${impactClass}"><strong>${item.diff}</strong> (${item.percent}%)</td>
-                <td><span class="status-badge ${statusClass}">${item.status}</span></td>
+                <td style="font-weight: 500;">${item.avg_before}</td>
+                <td style="font-weight: 500; color: #fff;">${item.avg_after}</td>
+                <td class="${impactClass}"><strong>${item.diff > 0 ? '+' : ''}${item.diff}</strong> (${item.percent > 0 ? '+' : ''}${item.percent}%)</td>
+                <td><span class="status-badge ${statusClass}">${arrow}</span></td>
             `;
             tbody.appendChild(row);
         });
@@ -653,25 +849,81 @@ async function fetchGroups() {
         const res = await fetch('/api/groups');
         state.groups = await res.json();
         renderGroups();
-        handleNavigation();
+        // Only force navigation if NOT already in a detail view (avoid double openLineDetail)
+        const currentHash = window.location.hash || '';
+        if (!currentHash.startsWith('#detail-')) {
+            handleNavigation(true);
+        }
     } catch (err) {
         console.error('Failed to fetch groups', err);
     }
 }
 
+let groupClickTimer = null;
 function renderGroups() {
     const container = document.getElementById('groups-container');
     if (!container) return;
     container.innerHTML = '';
 
     state.groups.forEach(group => {
+        // Calculate totals for this group
+        let totalPredicted = 0;
+        let totalRealized = 0;
+
+        state.lines.forEach(line => {
+            if (group.lines.includes(line.line_code)) {
+                totalPredicted += (line.predicted_passengers || 0);
+                totalRealized += (line.realized_passengers || 0);
+            }
+        });
+
+        const diff = totalRealized - totalPredicted;
+        const diffClass = diff < 0 ? 'text-negative' : (diff > 0 ? 'text-positive' : '');
+        const diffSign = diff > 0 ? '+' : '';
+
         const card = document.createElement('div');
-        card.className = 'group-card';
+        const isActive = state.macroFilterGroupId === group.id;
+        card.className = `group-card${isActive ? ' active-filter' : ''}`;
         card.innerHTML = `
-            <h3>${group.name}</h3>
-            <p class="stats">${group.lines.length} linhas vinculadas</p>
+            <div class="group-card-header">
+                <h3>${group.name}</h3>
+                <span class="group-line-count">${group.lines.length} linhas</span>
+            </div>
+            <div class="group-card-body">
+                <div class="group-stat-row">
+                    <span class="label">Previsto:</span>
+                    <span class="value">${Math.round(totalPredicted).toLocaleString()}</span>
+                </div>
+                <div class="group-stat-row">
+                    <span class="label">Realizado:</span>
+                    <span class="value">${Math.round(totalRealized).toLocaleString()}</span>
+                </div>
+                <div class="group-stat-diff ${diffClass}">
+                    ${diffSign}${Math.round(diff).toLocaleString()}
+                </div>
+            </div>
         `;
-        card.onclick = () => filterByGroup(group);
+
+        card.onclick = (e) => {
+            if (groupClickTimer) {
+                clearTimeout(groupClickTimer);
+                groupClickTimer = null;
+                // Double Click: Enter Group
+                filterByGroup(group);
+            } else {
+                groupClickTimer = setTimeout(() => {
+                    groupClickTimer = null;
+                    // Single Click: Toggle Macro Filter
+                    if (state.macroFilterGroupId === group.id) {
+                        state.macroFilterGroupId = null;
+                    } else {
+                        state.macroFilterGroupId = group.id;
+                    }
+                    renderGroups(); // Re-render to show active state
+                }, 250);
+            }
+        };
+
         container.appendChild(card);
     });
 
@@ -694,9 +946,18 @@ function renderDashboardSummary() {
         });
     });
 
-    // 2. Aggregate all data across all lines
+    // 2. Aggregate all data
     const aggregated = {};
-    state.lines.forEach(line => {
+    let dataToAggregate = state.lines;
+
+    if (state.macroFilterGroupId) {
+        const selectedGroup = state.groups.find(g => g.id === state.macroFilterGroupId);
+        if (selectedGroup) {
+            dataToAggregate = state.lines.filter(l => selectedGroup.lines.includes(l.line_code));
+        }
+    }
+
+    dataToAggregate.forEach(line => {
         if (!aggregated[line.line_code]) {
             aggregated[line.line_code] = { line_code: line.line_code, predicted: 0, realized: 0 };
         }
@@ -731,6 +992,10 @@ function renderDashboardSummary() {
                 <td>${item.realized.toLocaleString()}</td>
                 <td class="${diffClass}">${item.diff > 0 ? '+' : ''}${item.diff.toLocaleString()}</td>
                 <td class="${diffClass} diff-tag">${item.percent.toFixed(1)}%</td>
+                <td>
+                    <button class="btn accent x-small" style="padding: 2px 6px; font-size: 0.7rem;" 
+                            onclick="openUnifiedModal('${item.line_code}')">AÇÕES</button>
+                </td>
             `;
             tbody.appendChild(row);
         });
@@ -741,8 +1006,23 @@ function renderDashboardSummary() {
 }
 
 function filterByGroup(group) {
-    window.location.hash = `group-${group.id}`;
+    console.log(`[v${APP_VERSION}] filterByGroup requested:`, group.name);
+    window.location.hash = `#group-${group.id}`;
 }
+window.filterByGroup = filterByGroup;
+
+// Sort state for the group lines table
+let groupTableSort = { col: 'line', dir: 'asc' };
+
+window.setGroupSort = function (col) {
+    if (groupTableSort.col === col) {
+        groupTableSort.dir = groupTableSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        groupTableSort.col = col;
+        groupTableSort.dir = 'asc';
+    }
+    renderAggregatedTable();
+};
 
 function renderAggregatedTable() {
     const tbody = document.querySelector('#lines-table tbody');
@@ -776,9 +1056,24 @@ function renderAggregatedTable() {
         }
     });
 
-    const sortedLines = Object.values(aggregated).sort((a, b) => a.line_code.localeCompare(b.line_code));
+    const allLines = Object.values(aggregated);
 
-    sortedLines.forEach(line => {
+    // Apply user-selected sort
+    allLines.sort((a, b) => {
+        const dir = groupTableSort.dir === 'asc' ? 1 : -1;
+        if (groupTableSort.col === 'diff') {
+            return ((a.realized - a.predicted) - (b.realized - b.predicted)) * dir;
+        }
+        return a.line_code.localeCompare(b.line_code, undefined, { numeric: true }) * dir;
+    });
+
+    // Refresh sort icons
+    const iconLine = document.getElementById('sort-icon-line');
+    const iconDiff = document.getElementById('sort-icon-diff');
+    if (iconLine) iconLine.textContent = groupTableSort.col === 'line' ? (groupTableSort.dir === 'asc' ? '▲' : '▼') : '↕';
+    if (iconDiff) iconDiff.textContent = groupTableSort.col === 'diff' ? (groupTableSort.dir === 'asc' ? '▲' : '▼') : '↕';
+
+    allLines.forEach(line => {
         const diff = line.realized - line.predicted;
         const percent = line.predicted !== 0 ? (line.realized / line.predicted) * 100 : 0;
         const diffClass = diff > 0 ? 'diff-positive' : (diff < 0 ? 'diff-negative' : '');
@@ -803,285 +1098,486 @@ function renderAggregatedTable() {
 }
 
 // --- Unified Analysis & Actions ---
+// --- Unified Analysis & Actions ---
 async function openUnifiedModal(lineCode) {
     window.currentActionsLine = lineCode;
     window.currentAnalysisLine = lineCode;
 
     document.getElementById('unified-line-code').textContent = lineCode;
+
+    // Sync macro dates to history filters
+    const dashboardStart = document.getElementById('start-date').value;
+    const dashboardEnd = document.getElementById('end-date').value;
+    const filterStart = document.getElementById('history-filter-start');
+    const filterEnd = document.getElementById('history-filter-end');
+    if (filterStart && dashboardStart) filterStart.value = dashboardStart;
+    if (filterEnd && dashboardEnd) filterEnd.value = dashboardEnd;
+
+    // Mostra versão para debug
+    const vSpan = document.getElementById('app-version-indicator');
+    if (vSpan) vSpan.innerText = "v" + APP_VERSION;
+
     document.getElementById('unified-modal').classList.remove('hidden');
     document.body.classList.add('modal-open');
 
     // Reset to history view by default
     switchModalView('history');
 
-    // Clear inputs
-    document.getElementById('analysis-desc').value = '';
-    document.getElementById('analysis-file').value = '';
-    document.getElementById('action-comment').value = '';
-    document.getElementById('action-date').valueAsDate = new Date();
+    // Clear inputs and state
+    clearEventForm();
 
-    // Clear actions list to avoid stale data
-    const actionList = document.getElementById('actions-list');
-    if (actionList) actionList.innerHTML = '<p class="text-muted" style="font-size: 0.8rem;">Carregando...</p>';
-
-    // Fetch both histories in parallel
-    await Promise.all([
-        fetchAnalysisHistory(lineCode),
-        fetchActionsHistory(lineCode)
-    ]);
+    // Fetch unified history
+    await fetchLineEvents(lineCode);
 }
+window.openUnifiedModal = openUnifiedModal;
 
 function closeUnifiedModal() {
     document.getElementById('unified-modal').classList.add('hidden');
     document.body.classList.remove('modal-open');
-}
+    window.currentActionsLine = null;
 
-async function fetchAnalysisHistory(lineCode) {
-    const list = document.getElementById('analysis-list');
-    list.innerHTML = '<p class="text-muted" style="font-size: 0.8rem;">Carregando...</p>';
-
-    try {
-        const res = await fetch(`/api/analysis?line_code=${lineCode}`);
-        const data = await res.json();
-
-        if (data.length === 0) {
-            list.innerHTML = '<p class="text-muted" style="font-size: 0.8rem;">Nenhum arquivo anexado.</p>';
-            return;
-        }
-
-        list.innerHTML = '';
-        data.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'analysis-item';
-
-            const dateStr = new Date(item.created_at).toLocaleString('pt-BR');
-
-            const isMaster = state.user && state.user.role === 'MASTER';
-            const deleteBtn = isMaster ? `<button class="btn-delete-analysis" onclick="deleteAnalysis(${item.id})" title="Excluir Registro">Excluir</button>` : '';
-
-            div.innerHTML = `
-                <div class="analysis-info">
-                    <span class="analysis-fn">${item.original_filename}</span>
-                    <span class="analysis-desc">${item.description || 'Sem descrição'}</span>
-                    <span class="analysis-meta">${dateStr}</span>
-                </div>
-                <div class="analysis-actions">
-                    <a href="/api/analysis/download?id=${item.id}" target="_blank" class="btn-download-link">Baixar</a>
-                    ${deleteBtn}
-                </div>
-            `;
-            list.appendChild(div);
-        });
-    } catch (err) {
-        console.error(err);
-        list.innerHTML = '<p class="text-danger">Erro ao carregar histórico.</p>';
+    // Only restore URL if we're currently at a #detail- hash
+    // (happens when user navigated directly to #detail-X via URL)
+    if (window.location.hash.startsWith('#detail-')) {
+        const returnTo = '#' + (state.currentView || 'operacional');
+        history.replaceState(null, '', returnTo);
+        lastProcessedHash = returnTo;
+        handleNavigation(true);
     }
 }
 
-async function handleAnalysisUpload() {
-    const fileInput = document.getElementById('analysis-file');
-    const descInput = document.getElementById('analysis-desc');
+// --- SYSTEM: UNIFIED EVENTS (ANALYSIS & ACTIONS) ---
 
-    if (!fileInput.files[0]) {
-        alert('Por favor, selecione um arquivo.');
+function setEventFlow(flow) {
+    const typeInput = document.getElementById('event-type');
+    const formTitle = document.getElementById('form-title');
+    const form = document.getElementById('unified-event-form');
+    const fieldAnalysis = document.getElementById('field-group-analysis');
+    const fieldAction = document.getElementById('field-group-action');
+    const fieldExtraAnalysis = document.getElementById('field-group-extra-analysis');
+    const fieldExtraAction = document.getElementById('field-group-extra-action');
+    const btnAnalysis = document.getElementById('btn-flow-analysis');
+    const btnAction = document.getElementById('btn-flow-action');
+    const cbAction = document.getElementById('toggle-include-action');
+    const cbAnalysis = document.getElementById('toggle-include-analysis');
+    const toggleActionSection = document.getElementById('toggle-action-section');
+    const toggleAnalysisSection = document.getElementById('toggle-analysis-section');
+    const fileSection = document.getElementById('file-upload-section');
+
+    if (!typeInput) return;
+    typeInput.value = flow;
+
+    // Show the form
+    if (form) form.classList.remove('hidden');
+
+    // Reset checkboxes, extra fields, and toggle sections
+    if (cbAction) cbAction.checked = false;
+    if (cbAnalysis) cbAnalysis.checked = false;
+    if (fieldExtraAnalysis) fieldExtraAnalysis.classList.add('hidden');
+    if (fieldExtraAction) fieldExtraAction.classList.add('hidden');
+
+    if (flow === 'ANALYSIS') {
+        if (formTitle) formTitle.innerText = "Registrar Análise";
+        // Show analysis textarea, hide action textarea
+        if (fieldAnalysis) fieldAnalysis.classList.remove('hidden');
+        if (fieldAction) fieldAction.classList.add('hidden');
+        // Show file upload in right column, hide it from extra-analysis area
+        if (fileSection) fileSection.classList.remove('hidden');
+        // Show 'add action' toggle section, hide 'add analysis' toggle section
+        if (toggleActionSection) toggleActionSection.classList.remove('hidden');
+        if (toggleAnalysisSection) toggleAnalysisSection.classList.add('hidden');
+        // Button styles
+        if (btnAnalysis) { btnAnalysis.classList.add('active-flow'); btnAnalysis.style.boxShadow = "0 0 15px var(--primary-color)"; }
+        if (btnAction) { btnAction.classList.remove('active-flow'); btnAction.style.boxShadow = "none"; }
+
+    } else if (flow === 'ACTION') {
+        if (formTitle) formTitle.innerText = "Registrar Ação";
+        // Show action textarea, hide analysis textarea
+        if (fieldAnalysis) fieldAnalysis.classList.add('hidden');
+        if (fieldAction) fieldAction.classList.remove('hidden');
+        // Hide file upload from right column (appears below extra-analysis when checkbox checked)
+        if (fileSection) fileSection.classList.add('hidden');
+        // Show 'add analysis' toggle section, hide 'add action' toggle section
+        if (toggleActionSection) toggleActionSection.classList.add('hidden');
+        if (toggleAnalysisSection) toggleAnalysisSection.classList.remove('hidden');
+        // Button styles
+        if (btnAction) { btnAction.classList.add('active-flow'); btnAction.style.boxShadow = "0 0 15px var(--accent-color)"; }
+        if (btnAnalysis) { btnAnalysis.classList.remove('active-flow'); btnAnalysis.style.boxShadow = "none"; }
+    }
+}
+
+function collapseEventForm() {
+    const form = document.getElementById('unified-event-form');
+    if (form) form.classList.add('hidden');
+    clearEventForm();
+    const btnAnalysis = document.getElementById('btn-flow-analysis');
+    const btnAction = document.getElementById('btn-flow-action');
+    if (btnAnalysis) { btnAnalysis.classList.remove('active-flow'); btnAnalysis.style.boxShadow = "none"; }
+    if (btnAction) { btnAction.classList.remove('active-flow'); btnAction.style.boxShadow = "none"; }
+}
+
+function toggleExtraField(field) {
+    if (field === 'action') {
+        // ANALYSIS mode: show/hide the extra action textarea
+        const cb = document.getElementById('toggle-include-action');
+        const el = document.getElementById('field-group-extra-action');
+        if (el) el.classList.toggle('hidden', !cb.checked);
+    } else if (field === 'analysis') {
+        // ACTION mode: show/hide the extra analysis textarea + file upload
+        const cb = document.getElementById('toggle-include-analysis');
+        const el = document.getElementById('field-group-extra-analysis');
+        if (el) el.classList.toggle('hidden', !cb.checked);
+    }
+}
+
+function updateFileLabel() {
+    const input = document.getElementById('event-file');
+    const hasFile = input && input.files && input.files.length > 0;
+    const text = hasFile ? `📎 ${input.files[0].name}` : null;
+    const color = hasFile ? 'var(--primary-color)' : '';
+
+    const span1 = document.getElementById('event-file-name');
+    const span2 = document.getElementById('event-file-name-action');
+    [span1, span2].forEach(el => {
+        if (!el) return;
+        el.innerText = text || (el.id === 'event-file-name' ? '📎 Adicionar arquivo' : '📎 Adicionar arquivo de análise');
+        el.style.color = color;
+    });
+}
+
+async function fetchLineEvents(lineCode, quiet = false) {
+    const list = document.getElementById('unified-history-list');
+    if (!quiet && list) list.innerHTML = '<div class="placeholder-text">Carregando...</div>';
+
+    try {
+        const res = await fetch(`/api/line-events?line_code=${lineCode}`);
+        const data = await res.json();
+        state.lastEvents = data;
+
+        // Populate state.lastActions for backward-compatibility with impact modal.
+        const actions = data.filter(e => e.type === 'ACTION' || e.type === 'BOTH');
+        state.lastActions = actions.map(a => ({
+            ...a,
+            comment: a.action_taken || a.fact || 'Ação registrada'
+        }));
+
+        // Initial render with potential filters
+        renderEventsList();
+
+        // Also populate impact select if needed
+        populateImpactActionsSelect(state.lastActions);
+    } catch (err) {
+        console.error('Error fetching events:', err);
+    }
+}
+
+window.applyHistoryFilter = function () {
+    renderEventsList();
+};
+
+function renderEventsList() {
+    const list = document.getElementById('unified-history-list');
+    const counter = document.getElementById('history-counter');
+    if (!list) return;
+
+    const filterStart = document.getElementById('history-filter-start').value;
+    const filterEnd = document.getElementById('history-filter-end').value;
+
+    let filteredData = state.lastEvents;
+
+    if (filterStart || filterEnd) {
+        filteredData = state.lastEvents.filter(item => {
+            if (!item.implementation_date) return true; // Always include if pending
+            let ok = true;
+            if (filterStart && item.implementation_date < filterStart) ok = false;
+            if (filterEnd && item.implementation_date > filterEnd) ok = false;
+            return ok;
+        });
+    }
+
+    if (counter) counter.innerText = `${filteredData.length} registros`;
+
+    if (filteredData.length === 0) {
+        list.innerHTML = '<div class="placeholder-text">Nenhum evento encontrado no período selecionado.</div>';
         return;
     }
 
-    const formData = new FormData();
-    formData.append('line_code', window.currentAnalysisLine);
-    formData.append('description', descInput.value);
-    formData.append('file', fileInput.files[0]);
-    formData.append('author_id', state.user ? state.user.id : 0);
+    list.innerHTML = '';
+    filteredData.forEach(item => {
+        const div = document.createElement('div');
+        div.className = `analysis-item event-${item.type.toLowerCase()}`;
 
-    const btn = document.getElementById('btn-upload-analysis');
-    const originalText = btn.textContent;
-    btn.textContent = 'Enviando...';
-    btn.disabled = true;
+        const dateStr = item.implementation_date
+            ? new Date(item.implementation_date + 'T00:00:00').toLocaleDateString('pt-BR')
+            : 'Sem data';
+        const createdStr = new Date(item.created_at).toLocaleString('pt-BR');
 
-    try {
-        const res = await fetch('/api/analysis', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (res.ok) {
-            alert('Análise enviada com sucesso!');
-            descInput.value = '';
-            fileInput.value = '';
-            const labelText = document.querySelector('.file-label-text');
-            if (labelText) labelText.textContent = 'Anexar Arquivo';
-            await fetchAnalysisHistory(window.currentAnalysisLine);
-        } else {
-            const err = await res.text();
-            alert('Erro no envio: ' + err);
+        let fileLink = '';
+        if (item.filename) {
+            const label = item.original_filename || item.filename || 'Arquivo Anexo';
+            fileLink = `<div class="attachment-box" style="margin-top:8px;">
+                        <a href="/api/analysis/download?id=${item.id}" class="attachment-link">📎 ${label}</a>
+                    </div>`;
         }
-    } catch (err) {
-        console.error(err);
-        alert('Erro de conexão ao enviar arquivo.');
-    } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
-    }
-}
 
-async function deleteAnalysis(id) {
-    if (!confirm('Deseja realmente excluir este registro e o arquivo associado? Esta ação é irreversível.')) {
-        return;
-    }
+        // Build badge(s) and content based on type
+        let badgeHTML = '';
+        let contentHTML = '';
 
-    try {
-        const res = await fetch(`/api/analysis?id=${id}&userId=${state.user.id}`, {
-            method: 'DELETE'
-        });
-
-        if (res.ok) {
-            alert('Registro excluído com sucesso.');
-            await fetchAnalysisHistory(window.currentAnalysisLine);
+        if (item.type === 'BOTH') {
+            badgeHTML = `
+                        <span class="badge analysis" style="font-size:0.6rem;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.07);border:1px solid var(--primary-color);color:var(--primary-color);">ANÁLISE</span>
+                        <span style="font-size:0.6rem;color:var(--text-muted);margin:0 3px;">+</span>
+                        <span class="badge action" style="font-size:0.6rem;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.07);border:1px solid var(--accent-color);color:var(--accent-color);">AÇÃO</span>`;
+            contentHTML = `
+                        <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                            <div style="background:rgba(var(--primary-rgb,100,180,255),0.05);border-left:3px solid var(--primary-color);border-radius:0 6px 6px 0;padding:8px 10px;">
+                                <div style="font-size:0.6rem;color:var(--primary-color);font-weight:700;text-transform:uppercase;margin-bottom:5px;">📊 Análise</div>
+                                ${item.fact ? `<p style="margin:2px 0;font-size:0.82rem;"><strong>Fato:</strong> ${item.fact}</p>` : ''}
+                                ${item.analysis_conclusion ? `<p style="margin:4px 0 0;font-size:0.82rem;"><strong>Conclusão:</strong> ${item.analysis_conclusion}</p>` : ''}
+                            </div>
+                            <div style="background:rgba(var(--accent-rgb,255,140,80),0.05);border-left:3px solid var(--accent-color);border-radius:0 6px 6px 0;padding:8px 10px;">
+                                <div style="font-size:0.6rem;color:var(--accent-color);font-weight:700;text-transform:uppercase;margin-bottom:5px;">⚡ Ação</div>
+                                ${item.action_taken ? `<p style="margin:2px 0;font-size:0.82rem;">${item.action_taken}</p>` : '<p style="margin:2px 0;font-size:0.82rem;color:var(--text-muted);">—</p>'}
+                            </div>
+                        </div>`;
+        } else if (item.type === 'ANALYSIS') {
+            badgeHTML = `<span class="badge analysis" style="font-size:0.6rem;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.07);border:1px solid var(--primary-color);color:var(--primary-color);">ANÁLISE</span>`;
+            contentHTML = `<div class="event-content" style="margin-top:8px;font-size:0.85rem;color:var(--text-main);">
+                        ${item.fact ? `<p style="margin:2px 0;"><strong>Fato:</strong> ${item.fact}</p>` : ''}
+                        ${item.analysis_conclusion ? `<p style="margin:4px 0 0;"><strong>Conclusão:</strong> ${item.analysis_conclusion}</p>` : ''}
+                    </div>`;
         } else {
-            const err = await res.text();
-            alert('Erro ao excluir: ' + err);
+            badgeHTML = `<span class="badge action" style="font-size:0.6rem;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.07);border:1px solid var(--accent-color);color:var(--accent-color);">AÇÃO</span>`;
+            contentHTML = `<div class="event-content" style="margin-top:8px;font-size:0.85rem;color:var(--text-main);">
+                        ${item.fact ? `<p style="margin:2px 0;"><strong>Fato:</strong> ${item.fact}</p>` : ''}
+                        ${item.action_taken ? `<p style="margin:4px 0 0;"><strong>Ação:</strong> ${item.action_taken}</p>` : ''}
+                    </div>`;
         }
-    } catch (err) {
-        console.error(err);
-        alert('Erro de conexão ao excluir registro.');
-    }
-}
 
-// Helper to show filename in custom label
-function setupAnalysisUI() {
-    const fileInput = document.getElementById('analysis-file');
-    if (fileInput) {
-        fileInput.addEventListener('change', (e) => {
-            const labelText = document.querySelector('.file-label-text');
-            if (labelText && e.target.files[0]) {
-                labelText.textContent = `Arquivo: ${e.target.files[0].name}`;
-                labelText.style.color = '#3b82f6';
-            }
-        });
-    }
-}
-
-
-
-
-async function fetchActionsHistory(lineCode, quiet = false) {
-    const list = document.getElementById('actions-list');
-    if (!quiet) list.innerHTML = '<p class="text-muted" style="font-size: 0.8rem;">Carregando...</p>';
-
-    try {
-        const res = await fetch(`/api/line-actions?line_code=${lineCode}`);
-        const data = await res.json();
-
-        state.lastActions = data;
-
-        // Populate the dropdown in Impact View if it exists
-        populateImpactActionsSelect(data);
-
-        if (list) {
-            if (data.length === 0) {
-                list.innerHTML = '<p class="text-muted" style="font-size: 0.8rem;">Nenhum comentário registrado.</p>';
-                return;
-            }
-
-            list.innerHTML = '';
-            data.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'analysis-item'; // Reuse same styles
-
-                const dateStr = item.implementation_date
-                    ? new Date(item.implementation_date + 'T00:00:00').toLocaleDateString('pt-BR')
-                    : 'Sem data';
-                const createdStr = new Date(item.created_at).toLocaleString('pt-BR');
-
-                const isMaster = state.user && state.user.role === 'MASTER';
-                const deleteBtn = isMaster ? `<button class="btn-delete-analysis" onclick="deleteAction(${item.id})" title="Excluir">Excluir</button>` : '';
-
-                div.innerHTML = `
+        div.innerHTML = `
                     <div class="analysis-info">
-                        <span class="analysis-fn" style="color: var(--primary-color)">Implementação: ${dateStr}</span>
-                        <span class="analysis-desc">${item.comment}</span>
-                        <span class="analysis-meta">Registrado em ${createdStr}</span>
-                    </div>
-                    <div class="analysis-actions">
-                        <button class="btn-download-link" style="background: rgba(59, 130, 246, 0.1); color: #60a5fa;" 
-                            onclick="window.prepareImpactModal('${item.id}')" title="Ver Impacto">
-                            VER IMPACTO
-                        </button>
-                        ${deleteBtn}
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+                            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+                                ${badgeHTML}
+                                <span style="font-size:0.92rem;color:var(--text-main);font-weight:700;">${dateStr}</span>
+                                <small style="font-size:0.8rem;color:var(--text-muted);opacity:0.8;">por ${item.analyst || 'Sistema'}</small>
+                            </div>
+                            <div style="display:flex;gap:6px;flex-shrink:0;">
+                                <button class="btn secondary small" onclick="editEvent(${item.id})" style="padding:4px 12px;font-size:0.8rem;">Editar</button>
+                                <button class="btn small" onclick="deleteEvent(${item.id})" style="padding:4px 12px;font-size:0.8rem;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.4);">Excluir</button>
+                            </div>
+                        </div>
+                        ${contentHTML}
+                        ${fileLink}
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+                            <span style="font-size:0.7rem;color:var(--text-muted);opacity:0.6;">Registro #${item.id}</span>
+                            <span style="font-size:0.7rem;color:var(--text-muted);opacity:0.6;">Criado em ${createdStr}</span>
+                        </div>
                     </div>
                 `;
-                list.appendChild(div);
-            });
-        }
-    } catch (err) {
-        console.error(err);
-        if (!quiet) list.innerHTML = '<p class="text-danger">Erro ao carregar histórico.</p>';
-    }
+        list.appendChild(div);
+    });
 }
 
-async function handleSaveAction() {
-    const commentInput = document.getElementById('action-comment');
-    const dateInput = document.getElementById('action-date');
+async function saveUnifiedEvent() {
+    const id = document.getElementById('event-id').value;
+    const baseType = document.getElementById('event-type').value;
+    const fact = document.getElementById('event-fact').value.trim();
+    const analyst = document.getElementById('event-analyst').value.trim();
+    const dateInput = document.getElementById('event-date');
+    const date = dateInput ? dateInput.value : '';
+    const fileInput = document.getElementById('event-file');
 
-    const comment = commentInput.value.trim();
-    if (!comment) {
-        alert('Por favor, escreva um comentário.');
-        return;
+    if (!baseType) { alert('Por favor, selecione "Registrar Análise" ou "Registrar Ação".'); return; }
+    if (!fact) { alert('Por favor, descreva o fato/contexto.'); return; }
+    if (!window.currentActionsLine) { alert('Linha não identificada.'); return; }
+
+    // Read main fields based on flow
+    let conc = '';
+    let action = '';
+    const cbAction = document.getElementById('toggle-include-action');
+    const cbAnalysis = document.getElementById('toggle-include-analysis');
+
+    if (baseType === 'ANALYSIS') {
+        conc = (document.getElementById('event-analysis-conclusion')?.value || '').trim();
+        if (cbAction?.checked) {
+            action = (document.getElementById('event-action-taken-extra')?.value || '').trim();
+        }
+    } else if (baseType === 'ACTION') {
+        action = (document.getElementById('event-action-taken')?.value || '').trim();
+        if (cbAnalysis?.checked) {
+            conc = (document.getElementById('event-analysis-conclusion-extra')?.value || '').trim();
+        }
     }
 
-    if (!window.currentActionsLine) {
-        alert('Erro: Linha não identificada. Por favor, feche e abra o modal novamente.');
-        return;
-    }
+    // Determine final type
+    let finalType = baseType;
+    if (conc && action) finalType = 'BOTH';
+    else if (conc) finalType = 'ANALYSIS';
+    else if (action) finalType = 'ACTION';
 
-    const payload = {
-        line_code: window.currentActionsLine,
-        comment: comment,
-        implementation_date: dateInput.value,
-        author_id: state.user ? state.user.id : 0
-    };
+    const formData = new FormData();
+    if (id) formData.append('id', id);
+    formData.append('line_code', window.currentActionsLine);
+    formData.append('type', finalType);
+    formData.append('fact', fact);
+    formData.append('analysis_conclusion', conc);
+    formData.append('action_taken', action);
+    formData.append('analyst', analyst);
+    formData.append('implementation_date', date);
+    formData.append('author_id', state.user ? state.user.id : 0);
+    if (fileInput && fileInput.files[0]) formData.append('file', fileInput.files[0]);
 
-    const btn = document.getElementById('btn-save-action');
-    btn.disabled = true;
-    btn.textContent = 'Salvando...';
+    const btn = document.getElementById('btn-save-event');
+    if (btn) { btn.disabled = true; btn.innerText = "SALVANDO..."; }
 
     try {
-        const res = await fetch('/api/line-actions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
+        const res = await fetch('/api/line-events', { method: 'POST', body: formData });
         if (res.ok) {
-            commentInput.value = '';
-            await fetchActionsHistory(window.currentActionsLine);
+            collapseEventForm();
+            await fetchLineEvents(window.currentActionsLine);
         } else {
-            alert('Erro ao salvar comentário.');
+            alert('Erro ao salvar evento.');
         }
     } catch (err) {
         console.error(err);
-        alert('Erro de conexão ao salvar.');
+        alert('Erro de conexão.');
     } finally {
-        btn.disabled = false;
-        btn.textContent = 'SALVAR AÇÃO';
+        if (btn) { btn.disabled = false; btn.innerText = "SALVAR EVENTO"; }
     }
 }
 
-async function deleteAction(id) {
-    if (!confirm('Deseja excluir este comentário?')) return;
+function clearEventForm() {
+    ['event-id', 'event-type', 'event-fact', 'event-analysis-conclusion',
+        'event-analysis-conclusion-extra', 'event-action-taken', 'event-action-taken-extra',
+        'event-analyst', 'event-date', 'event-file'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
+    // Reset both file name labels
+    const fn1 = document.getElementById('event-file-name');
+    const fn2 = document.getElementById('event-file-name-action');
+    if (fn1) { fn1.innerText = "📎 Adicionar arquivo"; fn1.style.color = ''; }
+    if (fn2) { fn2.innerText = "📎 Adicionar arquivo de análise"; fn2.style.color = ''; }
+
+    // Reset checkboxes
+    const cbA = document.getElementById('toggle-include-action');
+    const cbB = document.getElementById('toggle-include-analysis');
+    if (cbA) cbA.checked = false;
+    if (cbB) cbB.checked = false;
+
+    // Hide all field groups, toggle sections and edit-controls
+    ['field-group-analysis', 'field-group-action',
+        'field-group-extra-analysis', 'field-group-extra-action',
+        'file-upload-section', 'toggle-action-section', 'toggle-analysis-section',
+        'edit-controls'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+}
+
+async function editEvent(id) {
+    console.log("DEBUG: Iniciando editEvent para ID:", id);
+
+    // Normalização agressiva para busca: procura por ID como número ou string
+    let event = state.lastEvents.find(e => e.id == id || (e.ID && e.ID == id));
+
+    // Fallback: Se não achar no estado local, pode ser que o estado foi sobrescrito ou está dessincronizado
+    if (!event) {
+        console.warn(`DEBUG: Registro #${id} não achado no cache. Tentando recarregar histórico para ${window.currentActionsLine}...`);
+        await fetchLineEvents(window.currentActionsLine, true);
+        event = state.lastEvents.find(e => e.id == id || (e.ID && e.ID == id));
+    }
+
+    if (!event) {
+        console.error("DEBUG: Evento ainda não encontrado após recarga:", id);
+        alert(`Erro Crítico: Registro #${id} não encontrado na memória.\n\nDetalhes para Suporte:\n- ID buscado: ${id}\n- Itens no cache: ${state.lastEvents.length}\n- Linha atual: ${window.currentActionsLine}`);
+        return;
+    }
+
+    clearEventForm();
 
     try {
-        const res = await fetch(`/api/line-actions?id=${id}&userId=${state.user.id}`, {
-            method: 'DELETE'
-        });
-        if (res.ok) {
-            await fetchActionsHistory(window.currentActionsLine);
-        } else {
-            alert('Erro ao excluir');
+        console.log("DEBUG: Editando evento tipo:", event.type, "dados:", event);
+
+        const idField = document.getElementById('event-id');
+        if (idField) idField.value = event.id || event.ID;
+
+        const factField = document.getElementById('event-fact');
+        if (factField) factField.value = event.fact || '';
+
+        const analystField = document.getElementById('event-analyst');
+        if (analystField) analystField.value = event.analyst || '';
+
+        const dateField = document.getElementById('event-date');
+        if (dateField) dateField.value = event.implementation_date || '';
+
+        // Determina o fluxo visual baseado no tipo salvo
+        if (event.type === 'BOTH' || event.type === 'ANALYSIS') {
+            setEventFlow('ANALYSIS');
+
+            const concField = document.getElementById('event-analysis-conclusion');
+            if (concField) concField.value = event.analysis_conclusion || '';
+
+            if (event.type === 'BOTH') {
+                const cbAction = document.getElementById('toggle-include-action');
+                if (cbAction) {
+                    cbAction.checked = true;
+                    toggleExtraField('action');
+                    const extraActionField = document.getElementById('event-action-taken-extra');
+                    if (extraActionField) extraActionField.value = event.action_taken || '';
+                }
+            }
+        } else if (event.type === 'ACTION') {
+            setEventFlow('ACTION');
+            const actionField = document.getElementById('event-action-taken');
+            if (actionField) actionField.value = event.action_taken || '';
+
+            // Suporte a análise extra no fluxo de ação se existir
+            if (event.analysis_conclusion) {
+                const cbAnalysis = document.getElementById('toggle-include-analysis');
+                if (cbAnalysis) {
+                    cbAnalysis.checked = true;
+                    toggleExtraField('analysis');
+                    const extraConcField = document.getElementById('event-analysis-conclusion-extra');
+                    if (extraConcField) extraConcField.value = event.analysis_conclusion || '';
+                }
+            }
         }
+
+        const title = document.getElementById('form-title');
+        if (title) title.innerText = "Editando Registro #" + (event.id || event.ID);
+
+        const form = document.getElementById('unified-event-form');
+        if (form) {
+            form.classList.remove('hidden');
+            form.style.display = 'block';
+            form.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        const ec = document.getElementById('edit-controls');
+        if (ec) ec.classList.remove('hidden');
+
+        console.log("DEBUG: editEvent concluído para ID:", id);
     } catch (err) {
-        alert('Erro de conexão');
+        console.error("DEBUG: Erro em editEvent:", err);
+        alert("Erro ao abrir formulário de edição: " + err.message);
     }
+}
+
+function cancelEventEdit() {
+    clearEventForm();
+}
+
+async function deleteEvent(id) {
+    if (!confirm('Deseja realmente excluir este registro?')) return;
+    try {
+        const res = await fetch(`/api/line-events?id=${id}&userId=${state.user ? state.user.id : 0}`, { method: 'DELETE' });
+        if (res.ok) await fetchLineEvents(window.currentActionsLine);
+        else alert('Erro ao excluir.');
+    } catch (err) { alert('Erro de conexão.'); }
 }
 
 // Group Management Interface
@@ -1131,9 +1627,79 @@ async function fetchAvailableLines() {
     try {
         const res = await fetch('/api/available-lines');
         state.availableLineCodes = await res.json();
+
+        // Also populate impact filter if it exists
+        populateImpactLineFilter();
     } catch (err) {
         console.error('Failed to fetch available lines', err);
     }
+}
+
+function populateImpactLineFilter() {
+    const trigger = document.getElementById('impact-line-trigger');
+    const dropdown = document.getElementById('impact-line-dropdown');
+    const searchInput = document.getElementById('impact-line-search');
+    const list = document.getElementById('impact-line-list');
+
+    if (!trigger || !dropdown || !list) return;
+
+    // Prevent re-adding listeners if already initialized
+    if (trigger.dataset.inited) {
+        if (list.renderList) list.renderList(searchInput.value);
+        if (trigger.updateTriggerText) trigger.updateTriggerText();
+        return;
+    }
+    trigger.onclick = (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('active');
+        if (dropdown.classList.contains('active')) searchInput.focus();
+    };
+
+    // Global click listener for closing dropdown
+    if (!window.impactDropdownInited) {
+        document.addEventListener('click', (e) => {
+            if (!dropdown.contains(e.target) && !trigger.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+        window.impactDropdownInited = true;
+    }
+
+    if (!state.impactSelectedLines) state.impactSelectedLines = new Set();
+
+    const updateTriggerText = () => {
+        const span = trigger.querySelector('span');
+        if (state.impactSelectedLines.size === 0) span.textContent = 'Todas as Linhas';
+        else if (state.impactSelectedLines.size === 1) span.textContent = Array.from(state.impactSelectedLines)[0];
+        else span.textContent = `${state.impactSelectedLines.size} Selecionadas`;
+    };
+    trigger.updateTriggerText = updateTriggerText;
+
+    const renderList = (term = '') => {
+        list.innerHTML = '';
+        const filtered = state.availableLineCodes.filter(c => term === '' || c.toLowerCase().includes(term.toLowerCase())).sort();
+
+        filtered.forEach(code => {
+            const div = document.createElement('div');
+            div.className = 'multi-select-item';
+            const isChecked = state.impactSelectedLines.has(code);
+            div.innerHTML = `<input type="checkbox" value="${code}" ${isChecked ? 'checked' : ''}> <span>${code}</span>`;
+            div.onclick = (e) => {
+                const cb = div.querySelector('input');
+                if (e.target !== cb) cb.checked = !cb.checked;
+                if (cb.checked) state.impactSelectedLines.add(code);
+                else state.impactSelectedLines.delete(code);
+                updateTriggerText();
+            };
+            list.appendChild(div);
+        });
+    };
+    list.renderList = renderList;
+
+    searchInput.oninput = (e) => renderList(e.target.value);
+    renderList();
+    updateTriggerText();
+    trigger.dataset.inited = "true";
 }
 
 function renderSelectionGrid() {
@@ -1350,6 +1916,7 @@ function switchModalView(view) {
     // Sync tabs first
     syncModalTabs(view);
 
+    // classList properly overrides display:none !important from .hidden — style.display cannot
     [historyView, impactView, detailView, comparativeView].forEach(v => {
         if (v) v.classList.add('hidden');
     });
@@ -1363,8 +1930,13 @@ function switchModalView(view) {
         if (comparativeView) comparativeView.classList.remove('hidden');
     } else if (view === 'detail') {
         if (detailView) detailView.classList.remove('hidden');
+        // Data is fetched by openLineDetail or applyDetailDates — do NOT double-fetch here
     } else {
         if (historyView) historyView.classList.remove('hidden');
+        // Reload events only when switching to history tab
+        if (window.currentActionsLine) {
+            fetchLineEvents(window.currentActionsLine, true);
+        }
     }
 }
 
@@ -1522,12 +2094,34 @@ function renderImpactSummary(data) {
     const delta = avgAfter - avgBefore;
     const perc = avgBefore !== 0 ? (delta / avgBefore * 100) : 0;
 
-    document.getElementById('impact-avg-before').innerText = avgBefore.toFixed(1);
-    document.getElementById('impact-avg-after').innerText = avgAfter.toFixed(1);
+    const spanBefore = document.getElementById('impact-avg-before');
+    const spanAfter = document.getElementById('impact-avg-after');
+
+    if (spanBefore) {
+        spanBefore.innerText = avgBefore.toFixed(1);
+        spanBefore.className = 'value'; // Removed yellow class
+    }
+    if (spanAfter) {
+        spanAfter.innerText = avgAfter.toFixed(1);
+        spanAfter.className = 'value'; // Removed yellow class
+    }
 
     const deltaEl = document.getElementById('impact-delta');
-    deltaEl.innerText = `${delta > 0 ? '+' : ''}${delta.toFixed(1)} (${perc.toFixed(1)}%)`;
-    deltaEl.className = `value ${delta > 0 ? 'diff-positive' : (delta < 0 ? 'diff-negative' : '')}`;
+    if (deltaEl) {
+        let arrow = '―'; // Estável
+        let cls = 'diff-stable';
+
+        if (delta > 0.05) { // Threshold pequeno para considerar mudança real
+            arrow = '↑';
+            cls = 'diff-positive';
+        } else if (delta < -0.05) {
+            arrow = '↓';
+            cls = 'diff-negative';
+        }
+
+        deltaEl.innerText = `${arrow} ${delta > 0 ? '+' : ''}${delta.toFixed(1)} (${perc.toFixed(perc !== 0 ? 1 : 0)}%)`;
+        deltaEl.className = `value ${cls}`;
+    }
 }
 
 function renderImpactChart(data) {
@@ -1638,13 +2232,18 @@ function renderImpactChart(data) {
 
 function renderImpactTable(data) {
     const tbody = document.querySelector('#impact-detail-table tbody');
+    if (!tbody) return;
     tbody.innerHTML = '';
 
     data.before.forEach((itemB, i) => {
         const itemA = data.after[i] || { val: 0, date: '' };
         const diff = itemA.val - itemB.val;
         const perc = itemB.val !== 0 ? (diff / itemB.val * 100) : 0;
-        const cls = diff > 0 ? 'diff-positive' : (diff < 0 ? 'diff-negative' : '');
+
+        let arrow = '―';
+        let cls = 'diff-stable';
+        if (diff > 0.05) { arrow = '↑'; cls = 'diff-positive'; }
+        else if (diff < -0.05) { arrow = '↓'; cls = 'diff-negative'; }
 
         // Use more descriptive date label for the row
         const dateObjA = new Date(itemA.date + 'T00:00:00');
@@ -1659,10 +2258,10 @@ function renderImpactTable(data) {
             <td style="font-weight: 500; font-size: 0.85rem;">${Math.round(itemB.val).toLocaleString('pt-BR')}</td>
             <td style="font-weight: 600; font-size: 0.85rem; color: #fff;">${Math.round(itemA.val).toLocaleString('pt-BR')}</td>
             <td class="${cls}" style="font-weight: 700; font-size: 0.85rem;">
-                ${diff > 0 ? '+' : ''}${Math.round(diff).toLocaleString('pt-BR')}
+                ${arrow} ${diff > 0 ? '+' : ''}${Math.round(diff).toLocaleString('pt-BR')}
             </td>
             <td class="${cls}" style="font-weight: 700; font-size: 0.85rem; text-align: right;">
-                ${diff > 0 ? '+' : ''}${perc.toFixed(1)}%
+                ${arrow} ${diff > 0 ? '+' : ''}${perc.toFixed(perc !== 0 ? 1 : 0)}%
             </td>
         `;
         tbody.appendChild(tr);
@@ -1870,16 +2469,31 @@ function renderCompChart(canvasId, data, label, chartInstance, setChartInstance)
     setChartInstance(newChart);
 }
 
-function openLineDetail(lineCode) {
-    console.log('DEBUG: openLineDetail for:', lineCode);
+function openLineDetail(lineCode, fromNavigation = false) {
+    console.log('[CORE] openLineDetail for:', lineCode, 'fromNavigation:', fromNavigation);
 
     const mainStart = document.getElementById('start-date').value;
     const mainEnd = document.getElementById('end-date').value;
 
-    document.getElementById('detail-date-start').value = mainStart;
-    document.getElementById('detail-date-end').value = mainEnd;
-    document.getElementById('detail-line-title').innerText = lineCode;
-    document.getElementById('unified-line-code').innerText = lineCode; // SYNC SHARED TITLE
+    const startEl = document.getElementById('detail-date-start');
+    const endEl = document.getElementById('detail-date-end');
+    if (startEl) startEl.value = mainStart;
+    if (endEl) endEl.value = mainEnd;
+
+    const titleEl = document.getElementById('detail-line-title');
+    const unifiedTitleEl = document.getElementById('unified-line-code');
+    if (titleEl) titleEl.innerText = lineCode;
+    if (unifiedTitleEl) unifiedTitleEl.innerText = lineCode;
+
+    // Only update the URL when navigated to directly (e.g. user typed #detail-002 in address bar).
+    // When called from a button or search bar, keep the URL unchanged so closing restores naturally.
+    if (fromNavigation) {
+        const targetHash = '#detail-' + lineCode;
+        if (window.location.hash !== targetHash) {
+            history.replaceState(null, '', targetHash);
+            lastProcessedHash = targetHash;
+        }
+    }
 
     currentDetailState = {
         lineCode: lineCode,
@@ -1887,24 +2501,22 @@ function openLineDetail(lineCode) {
         end: mainEnd,
         dayOfWeek: 'all'
     };
+    window.currentActionsLine = lineCode;
 
     const dayFilter = document.getElementById('detail-day-filter');
     if (dayFilter) dayFilter.value = 'all';
 
-    // OPEN THE MODAL FIRST
-    document.getElementById('unified-modal').classList.remove('hidden');
+    const modal = document.getElementById('unified-modal');
+    if (modal) modal.classList.remove('hidden');
     document.body.classList.add('modal-open');
 
     switchModalView('detail');
 
-    // Clear history lists to avoid stale data if user switches tabs
     const actionList = document.getElementById('actions-list');
     if (actionList) actionList.innerHTML = '';
 
     fetchAndRenderLineDetail();
-
-    // Fetch actions to populate the Impact Selector (quietly)
-    fetchActionsHistory(lineCode, true);
+    fetchLineEvents(lineCode, true);
 }
 
 function applyDetailDates() {
@@ -1920,16 +2532,20 @@ function applyDetailDates() {
 
 async function fetchAndRenderLineDetail() {
     const { lineCode, start, end } = currentDetailState;
-    if (!lineCode) return;
+    console.log('[DETAIL] fetchAndRenderLineDetail called with:', { lineCode, start, end });
+    if (!lineCode) { console.warn('[DETAIL] Aborted: no lineCode in currentDetailState'); return; }
 
     try {
-        const res = await fetch(`/api/lines?line_code=${lineCode}&start=${start}&end=${end}`);
+        const url = `/api/lines?line_code=${lineCode}&start=${start}&end=${end}`;
+        console.log('[DETAIL] Fetching:', url);
+        const res = await fetch(url);
         const data = await res.json();
+        console.log('[DETAIL] API returned', data.length, 'rows for', lineCode);
         state.lastDetailData = data;
 
         processAndRenderDetail();
     } catch (err) {
-        console.error('Error fetching line detail:', err);
+        console.error('[DETAIL] Error fetching line detail:', err);
     }
 }
 
@@ -1960,82 +2576,88 @@ function processAndRenderDetail() {
 }
 
 function renderDetailSummary(data) {
+    console.log('[DETAIL] renderDetailSummary with', data.length, 'rows');
     const total = data.reduce((acc, curr) => acc + (curr.realized_passengers || 0), 0);
     const avg = data.length > 0 ? (total / data.length) : 0;
 
-    document.getElementById('detail-total-realized').innerText = Math.round(total).toLocaleString('pt-BR');
-    document.getElementById('detail-avg-daily').innerText = avg.toFixed(1);
+    const totalEl = document.getElementById('detail-total-realized');
+    const avgEl = document.getElementById('detail-avg-daily');
+    if (totalEl) totalEl.innerText = Math.round(total).toLocaleString('pt-BR');
+    if (avgEl) avgEl.innerText = avg.toFixed(1);
 
-    // Naive trend calculation (last 3 vs previous 3)
     if (data.length >= 6) {
-        const recent = data.slice(-3).reduce((a, b) => a + b.realized_passengers, 0);
-        const older = data.slice(-6, -3).reduce((a, b) => a + b.realized_passengers, 0);
+        const recent = data.slice(-3).reduce((a, b) => a + (b.realized_passengers || 0), 0);
+        const older = data.slice(-6, -3).reduce((a, b) => a + (b.realized_passengers || 0), 0);
         const diff = recent - older;
         const trendEl = document.getElementById('detail-trend');
-
-        if (diff > total * 0.05) {
-            trendEl.innerText = 'CRESCENTE';
-            trendEl.className = 'value diff-positive';
-        } else if (diff < -total * 0.05) {
-            trendEl.innerText = 'QUEDA';
-            trendEl.className = 'value diff-negative';
-        } else {
-            trendEl.innerText = 'ESTÁVEL';
-            trendEl.className = 'value';
+        if (trendEl) {
+            if (diff > total * 0.05) { trendEl.innerText = 'CRESCENTE'; trendEl.className = 'value diff-positive'; }
+            else if (diff < -total * 0.05) { trendEl.innerText = 'QUEDA'; trendEl.className = 'value diff-negative'; }
+            else { trendEl.innerText = 'ESTÁVEL'; trendEl.className = 'value'; }
         }
     }
 }
 
 function renderDetailChart(data) {
-    const ctx = document.getElementById('detailChart').getContext('2d');
-    if (detailChart) detailChart.destroy();
+    console.log('[DETAIL] renderDetailChart with', data.length, 'rows');
+    const canvas = document.getElementById('detailChart');
+    if (!canvas) { console.error('[DETAIL] detailChart canvas NOT FOUND'); return; }
+
+    const container = canvas.parentElement;
+    console.log('[DETAIL] canvas container size:', container?.offsetWidth, 'x', container?.offsetHeight);
 
     const labels = data.map(d => {
         const date = new Date(d.date + 'T00:00:00');
         return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     });
 
-    detailChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Previsto',
-                    data: data.map(d => Math.round(d.predicted_passengers)),
-                    borderColor: '#14b8a6', // Teal color for contrast
-                    backgroundColor: 'rgba(20, 184, 166, 0.05)',
-                    borderDash: [5, 3],
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    fill: true,
-                    tension: 0.2
-                },
-                {
-                    label: 'Realizado',
-                    data: data.map(d => Math.round(d.realized_passengers)),
-                    borderColor: '#10b981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    borderWidth: 3,
-                    pointRadius: 4,
-                    pointBackgroundColor: '#10b981',
-                    fill: true,
-                    tension: 0.3
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { labels: { color: '#94a3b8', font: { size: 10 } } },
-                tooltip: { mode: 'index', intersect: false }
+    // Use requestAnimationFrame to ensure container has layout dimensions before Chart.js measures
+    requestAnimationFrame(() => {
+        if (detailChart) detailChart.destroy();
+        const ctx = canvas.getContext('2d');
+        detailChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Previsto',
+                        data: data.map(d => Math.round(d.predicted_passengers)),
+                        borderColor: '#14b8a6',
+                        backgroundColor: 'rgba(20, 184, 166, 0.05)',
+                        borderDash: [5, 3],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: true,
+                        tension: 0.2
+                    },
+                    {
+                        label: 'Realizado',
+                        data: data.map(d => Math.round(d.realized_passengers)),
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#10b981',
+                        fill: true,
+                        tension: 0.3
+                    }
+                ]
             },
-            scales: {
-                x: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { display: false } },
-                y: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.03)' } }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#94a3b8', font: { size: 10 } } },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { display: false } },
+                    y: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.03)' } }
+                }
             }
-        }
+        });
+        console.log('[DETAIL] Chart created, size:', detailChart.width, 'x', detailChart.height);
     });
 }
 
@@ -2079,8 +2701,8 @@ window.deleteGroup = deleteGroup;
 window.toggleLineInGroup = toggleLineInGroup;
 window.switchGroupModalView = switchGroupModalView;
 window.openUnifiedModal = openUnifiedModal;
-window.deleteAnalysis = deleteAnalysis;
-window.deleteAction = deleteAction;
+window.deleteEvent = deleteEvent;
+// (deleteAction was removed — use deleteEvent for all event deletion)
 window.handleClearData = handleClearData;
 
 // Logic helpers
@@ -2193,7 +2815,8 @@ function populateImpactActionsSelect(actions) {
         const dateStr = action.implementation_date
             ? new Date(action.implementation_date + 'T00:00:00').toLocaleDateString('pt-BR')
             : 'Sem data';
-        option.textContent = `${dateStr} - ${action.comment.substring(0, 50)}${action.comment.length > 50 ? '...' : ''}`;
+        const analystStr = action.analyst ? ` [${action.analyst}]` : '';
+        option.textContent = `${dateStr} - ${action.comment.substring(0, 50)}${action.comment.length > 50 ? '...' : ''}${analystStr}`;
         select.appendChild(option);
     });
 
@@ -2225,7 +2848,9 @@ function populateImpactActionsSelect(actions) {
         document.getElementById('impact-base-date').innerText = target.implementation_date
             ? actionDate.toLocaleDateString('pt-BR')
             : '-';
-        document.getElementById('impact-action-desc').innerText = target.comment;
+
+        const analystLabel = target.analyst ? ` (Analista: ${target.analyst})` : '';
+        document.getElementById('impact-action-desc').innerText = target.comment + analystLabel;
     }
 }
 
@@ -2251,3 +2876,538 @@ window.handleImpactDateChange = handleImpactDateChange;
 window.applyDetailDates = applyDetailDates;
 window.openComparativeImpact = openComparativeImpact;
 window.saveImpactConclusion = saveImpactConclusion;
+window.setEventFlow = setEventFlow;
+window.saveUnifiedEvent = saveUnifiedEvent;
+window.editEvent = editEvent;
+window.cancelEventEdit = cancelEventEdit;
+window.deleteEvent = deleteEvent;
+window.updateFileLabel = updateFileLabel;
+window.handleNavigation = handleNavigation;
+window.applyView = applyView;
+window.exitGroupUI = exitGroupUI;
+window.enterGroupUI = enterGroupUI;
+window.switchMainTab = switchMainTab;
+window.handleClearData = handleClearData;
+window.renderImpactPage = renderImpactPage;
+window.closeUnifiedModal = closeUnifiedModal;
+window.collapseEventForm = collapseEventForm;
+window.toggleExtraField = toggleExtraField;
+window.switchGroupModalView = switchGroupModalView;
+window.filterByGroup = filterByGroup;
+
+/** --- CUSTOM MULTI-SELECT DROPDOWN LOGIC --- **/
+
+/**
+ * Filter multi-select options based on search input
+ */
+window.filterMSOptions = function (input) {
+    const dropdown = input.closest('.ms-dropdown');
+    const filter = input.value.toLowerCase();
+    const options = dropdown.querySelectorAll('.ms-option');
+
+    options.forEach(option => {
+        const text = option.querySelector('span').textContent.toLowerCase();
+        if (text.includes(filter)) {
+            option.style.display = 'flex';
+        } else {
+            option.style.display = 'none';
+        }
+    });
+};
+
+window.toggleMSDropdown = function (id) {
+    const dropdown = document.getElementById(id);
+    const wasActive = dropdown.classList.contains('active');
+
+    // Close others
+    document.querySelectorAll('.ms-dropdown').forEach(d => {
+        if (d.id !== id) d.classList.remove('active');
+    });
+
+    dropdown.classList.toggle('active');
+
+    // Reset search when opening
+    if (!wasActive) {
+        const searchInput = dropdown.querySelector('.ms-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+            window.filterMSOptions(searchInput);
+            searchInput.focus();
+        }
+    }
+};
+
+window.toggleMSOption = function (element, dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    const isSingleSelect = dropdown.getAttribute('data-selection') === 'single';
+
+    if (isSingleSelect) {
+        // Clear others
+        dropdown.querySelectorAll('.ms-option').forEach(opt => {
+            if (opt !== element) {
+                opt.classList.remove('selected');
+                const checkbox = opt.querySelector('input[type="checkbox"]');
+                if (checkbox) checkbox.checked = false;
+            }
+        });
+
+        // Toggle current
+        element.classList.toggle('selected');
+        const checkbox = element.querySelector('input[type="checkbox"]');
+        if (checkbox) checkbox.checked = element.classList.contains('selected');
+
+        // Close dropdown if selected (standard behavior for single select)
+        if (element.classList.contains('selected')) {
+            setTimeout(() => dropdown.classList.remove('active'), 200);
+        }
+    } else {
+        // Multiple Select (default)
+        element.classList.toggle('selected');
+        const checkbox = element.querySelector('input[type="checkbox"]');
+        if (checkbox) checkbox.checked = element.classList.contains('selected');
+    }
+
+    updateMSDisplayText(dropdownId);
+};
+
+window.updateMSDisplayText = function (dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+    const selectedOptions = [...dropdown.querySelectorAll('.ms-option.selected span')].map(s => s.textContent.trim());
+    const displayElement = dropdown.querySelector('.ms-selected-text');
+
+    if (selectedOptions.length === 0) {
+        if (dropdownId.includes('fact')) {
+            displayElement.textContent = 'Selecionar Fato...';
+        } else if (dropdownId.includes('cause')) {
+            displayElement.textContent = 'Selecionar Causa(s)...';
+        } else {
+            displayElement.textContent = 'Selecionar Ação(ões)...';
+        }
+        displayElement.classList.add('ms-placeholder');
+    } else {
+        displayElement.textContent = selectedOptions.join(', ');
+        displayElement.classList.remove('ms-placeholder');
+    }
+};
+
+// Global click listener to close dropdowns
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.ms-dropdown') && !e.target.closest('.ms-search-container')) {
+        document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.remove('active'));
+    }
+});
+
+/** --- NEW ACTIONS TAB LOGIC --- **/
+
+window.renderActionsTab = async function () {
+    const tableBody = document.querySelector('#actions-history-table tbody');
+    if (!tableBody) return;
+    tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Carregando...</td></tr>';
+
+    const start = document.getElementById('actions-filter-start')?.value;
+    const end = document.getElementById('actions-filter-end')?.value;
+
+    try {
+        let url = '/api/line-events';
+        if (start && end) {
+            url += `?start=${start}&end=${end}`;
+        }
+        const res = await fetch(url);
+        const events = await res.json();
+
+        // Fetch groups to map group_id or line to group name
+        const groupRes = await fetch('/api/groups');
+        const groups = await groupRes.json();
+
+        const formatDBDate = (str) => {
+            if (!str) return '-';
+            // If it's YYYY-MM-DD (possibly with time like YYYY-MM-DD HH:mm:ss)
+            // Strip anything after space or T
+            const cleanStr = str.split(' ')[0].split('T')[0];
+            if (cleanStr.includes('-') && cleanStr.split('-')[0].length === 4) {
+                const [y, m, d] = cleanStr.split('-');
+                return `${d}/${m}/${y}`;
+            }
+            // Fallback for full ISO strings or already formatted strings
+            const d = new Date(str);
+            if (isNaN(d.getTime())) return str;
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
+        };
+
+        tableBody.innerHTML = events.map(event => {
+            const group = groups.find(g => g.lines && g.lines.includes(event.line_code)) || { name: '-' };
+            // Prioritize implementation_date (action date) and created_at (which we'll now override if sent manually)
+            // Wait, I should use the field I'm about to send: 'upload_date' or just keep it in 'created_at' on backend?
+            // Let's assume I'll send it as 'created_at' to reuse the column, or server.py will handle it.
+            const regDate = formatDBDate(event.created_at);
+            const actionDate = formatDBDate(event.implementation_date);
+
+            return `
+                <tr>
+                    <td style="font-weight: 500; color: var(--text-muted);">${regDate}</td>
+                    <td>${actionDate}</td>
+                    <td>${group.name}</td>
+                    <td>${event.line_code}</td>
+                    <td>${event.fact || '-'}</td>
+                    <td>${event.cause || '-'}</td>
+                    <td>${event.action_taken || '-'}</td>
+                    <td>
+                        <button class="btn text-only" onclick='openSummaryModal(${JSON.stringify(event.analysis_conclusion || "")})' style="font-size: 0.75rem; color: var(--primary-color);">
+                            VER ANÁLISE
+                        </button>
+                    </td>
+                    <td>${event.analyst || '-'}</td>
+                    <td>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn text-only" onclick="editActionSimplified(${event.id})" style="color: var(--primary-color); padding: 5px;">
+                                <i class="fas fa-edit"></i> EDITAR
+                            </button>
+                            <button class="btn text-only" onclick="deleteActionSimplified(${event.id})" style="color: #ef4444; padding: 5px;">
+                                <i class="fas fa-trash"></i> APAGAR
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error('Error rendering actions tab:', err);
+        tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center; color: #ef4444;">Erro ao carregar dados.</td></tr>';
+    }
+}
+
+window.exportActionsToExcel = function () {
+    const start = document.getElementById('actions-filter-start')?.value;
+    const end = document.getElementById('actions-filter-end')?.value;
+
+    if (!start || !end) {
+        if (window.showNotification) {
+            window.showNotification('Por favor, selecione um período.', 'info');
+        } else {
+            alert('Por favor, selecione um período.');
+        }
+        return;
+    }
+
+    const url = `/api/export-actions?start=${start}&end=${end}`;
+    window.location.href = url;
+}
+
+window.openActionRegistrationModal = function () {
+    const modal = document.getElementById('action-reg-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        populateRegGroupsDropdown();
+        document.getElementById('action-reg-form').reset();
+        document.getElementById('reg-event-id').value = '';
+        document.getElementById('action-reg-title').textContent = 'Registrar Ação';
+
+        // Clear multi-select dropdowns
+        document.querySelectorAll('.ms-dropdown').forEach(dropdown => {
+            dropdown.querySelectorAll('.ms-option').forEach(opt => {
+                opt.classList.remove('selected');
+                const cb = opt.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = false;
+            });
+            updateMSDisplayText(dropdown.id);
+        });
+
+        // Default upload date to today, leave action date empty
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('reg-action-date').value = '';
+        document.getElementById('reg-upload-date').value = today;
+    }
+}
+
+window.closeActionRegModal = function () {
+    const modal = document.getElementById('action-reg-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function populateRegGroupsDropdown() {
+    const groupSelect = document.getElementById('reg-group');
+    if (!groupSelect) return;
+
+    groupSelect.innerHTML = '<option value="">— Selecionar Grupo —</option>' +
+        state.groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+}
+
+window.updateRegLinesDropdown = function () {
+    const groupId = parseInt(document.getElementById('reg-group').value);
+    const lineSelect = document.getElementById('reg-line');
+    if (!lineSelect) return;
+
+    if (!groupId) {
+        lineSelect.innerHTML = '<option value="">— Selecionar Linha —</option>';
+        lineSelect.disabled = true;
+        return;
+    }
+
+    const group = state.groups.find(g => g.id === groupId);
+    if (group && group.lines) {
+        lineSelect.innerHTML = '<option value="">— Selecionar Linha —</option>' +
+            group.lines.map(code => `<option value="${code}">${code}</option>`).join('');
+        lineSelect.disabled = false;
+    }
+}
+
+window.saveActionRegistration = async function (e) {
+    if (e) e.preventDefault();
+
+    const formData = new FormData();
+    formData.append('implementation_date', document.getElementById('reg-action-date').value);
+    formData.append('created_at', document.getElementById('reg-upload-date').value); // Overriding created_at with manual selection
+    formData.append('analyst', document.getElementById('reg-analyst').value);
+    formData.append('line_code', document.getElementById('reg-line').value);
+
+    // Collect Fact (Single Select Custom Dropdown)
+    const selectedFact = document.querySelector('#reg-fact-dropdown .ms-option.selected span')?.textContent.replace(/\s+/g, ' ').trim() || '';
+    formData.append('fact', selectedFact);
+
+    // Collect dropdown values
+    const selectedCauses = [...document.querySelectorAll('#reg-cause-dropdown .ms-option.selected span')].map(s => s.textContent.replace(/\s+/g, ' ').trim());
+    const selectedActions = [...document.querySelectorAll('#reg-action-dropdown .ms-option.selected span')].map(s => s.textContent.replace(/\s+/g, ' ').trim());
+
+    formData.append('cause', selectedCauses.join(', '));
+    formData.append('action_taken', selectedActions.join(', '));
+    formData.append('analysis_conclusion', document.getElementById('reg-analysis').value);
+    formData.append('type', 'ACTION');
+    formData.append('author_id', state.user?.id || 1);
+
+    const eventId = document.getElementById('reg-event-id').value;
+    if (eventId) {
+        formData.append('id', eventId);
+    }
+
+    try {
+        const res = await fetch('/api/line-events', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (res.ok) {
+            closeActionRegModal();
+            renderActionsTab();
+            // Optional: alert or notification
+            if (window.showNotification) {
+                window.showNotification('Ação registrada com sucesso!', 'success');
+            } else {
+                alert('Ação registrada com sucesso!');
+            }
+        } else {
+            const err = await res.json();
+            alert('Erro ao salvar: ' + (err.error || 'Erro desconhecido'));
+        }
+    } catch (err) {
+        console.error('Error saving action registration:', err);
+        alert('Erro de conexão com o servidor.');
+    }
+}
+
+window.openSummaryModal = function (text) {
+    const modal = document.getElementById('analysis-summary-modal');
+    const textEl = document.getElementById('summary-text');
+    if (modal && textEl) {
+        textEl.textContent = text || 'Sem resumo disponível.';
+        modal.classList.remove('hidden');
+    }
+}
+
+window.closeSummaryModal = function () {
+    const modal = document.getElementById('analysis-summary-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// Initial attachment of form listener
+document.addEventListener('submit', (e) => {
+    if (e.target.id === 'action-reg-form') {
+        window.saveActionRegistration(e);
+    }
+});
+function openClearDataModal() {
+    document.getElementById('clear-data-modal').classList.remove('hidden');
+    document.body.classList.add('modal-open');
+}
+
+function closeClearDataModal() {
+    document.getElementById('clear-data-modal').classList.add('hidden');
+    document.body.classList.remove('modal-open');
+}
+
+async function confirmClearData() {
+    const targets = [];
+    if (document.getElementById('clear-actions').checked) targets.push('actions');
+    if (document.getElementById('clear-predicted').checked) targets.push('predicted');
+    if (document.getElementById('clear-realized').checked) targets.push('realized');
+    if (document.getElementById('clear-groups').checked) targets.push('groups');
+    if (document.getElementById('clear-distribution').checked) targets.push('distribution');
+
+    if (targets.length === 0) {
+        showNotification('Selecione ao menos uma categoria para limpar.', 'error');
+        return;
+    }
+
+    if (!confirm('VOCÊ TEM CERTEZA?\nEsta ação excluirá permanentemente os dados selecionados.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/clear-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: state.user.id,
+                targets: targets
+            })
+        });
+
+        if (response.ok) {
+            showNotification('Os dados selecionados foram apagados com sucesso!', 'success');
+            closeClearDataModal();
+
+            // Comprehensive refresh
+            await fetchGroups();
+            await fetchLines();
+
+            if (targets.includes('actions')) {
+                if (typeof renderActionsTab === 'function') {
+                    renderActionsTab();
+                }
+            }
+        } else {
+            const err = await response.text();
+            showNotification('Erro ao limpar dados: ' + err, 'error');
+        }
+    } catch (error) {
+        console.error('Clear Data Error:', error);
+        showNotification('Erro na requisição de limpeza.', 'error');
+    }
+}
+async function editActionSimplified(id) {
+    try {
+        const res = await fetch('/api/line-events');
+        const events = await res.json();
+        const event = events.find(e => e.id === id);
+
+        if (!event) {
+            showNotification('Registro não encontrado.', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('action-reg-modal');
+        modal.classList.remove('hidden');
+        document.getElementById('action-reg-title').textContent = 'Editar Ação';
+        document.getElementById('reg-event-id').value = event.id;
+
+        // Strip time from dates for input[type=date]
+        const stripDate = (str) => str ? str.split(' ')[0].split('T')[0] : '';
+
+        document.getElementById('reg-action-date').value = stripDate(event.implementation_date);
+        document.getElementById('reg-upload-date').value = stripDate(event.created_at);
+        document.getElementById('reg-analyst').value = event.analyst || '';
+        document.getElementById('reg-analysis').value = event.analysis_conclusion || '';
+
+        // Pre-select Fact (Single Select)
+        const fact = event.fact || '';
+        document.querySelectorAll('#reg-fact-dropdown .ms-option').forEach(opt => {
+            const text = opt.querySelector('span').textContent.trim();
+            if (text === fact) {
+                opt.classList.add('selected');
+                const cb = opt.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = true;
+            } else {
+                opt.classList.remove('selected');
+                const cb = opt.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = false;
+            }
+        });
+        updateMSDisplayText('reg-fact-dropdown');
+
+        // Handle multi-select dropdowns
+        const causes = event.cause ? event.cause.split(', ').map(s => s.trim()) : [];
+        const actions = event.action_taken ? event.action_taken.split(', ').map(s => s.trim()) : [];
+
+        // Pre-select Causes
+        document.querySelectorAll('#reg-cause-dropdown .ms-option').forEach(opt => {
+            const text = opt.querySelector('span').textContent.trim();
+            if (causes.includes(text)) {
+                opt.classList.add('selected');
+                const cb = opt.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = true;
+            } else {
+                opt.classList.remove('selected');
+                const cb = opt.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = false;
+            }
+        });
+        updateMSDisplayText('reg-cause-dropdown');
+
+        // Pre-select Actions
+        document.querySelectorAll('#reg-action-dropdown .ms-option').forEach(opt => {
+            const text = opt.querySelector('span').textContent.trim();
+            if (actions.includes(text)) {
+                opt.classList.add('selected');
+                const cb = opt.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = true;
+            } else {
+                opt.classList.remove('selected');
+                const cb = opt.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = false;
+            }
+        });
+        updateMSDisplayText('reg-action-dropdown');
+
+        // Handle Group/Line dependency
+        populateRegGroupsDropdown();
+
+        // Trigger line dropdown update manually
+        window.updateRegLinesDropdown();
+
+        // Find group that contains this line
+        const groupRes = await fetch('/api/groups');
+        const groups = await groupRes.json();
+        const group = groups.find(g => g.lines && g.lines.includes(event.line_code));
+
+        if (group) {
+            document.getElementById('reg-group').value = group.id;
+            updateRegLinesDropdown();
+            document.getElementById('reg-line').value = event.line_code;
+        }
+    } catch (err) {
+        console.error('Error in editActionSimplified:', err);
+        showNotification('Erro ao carregar dados para edição.', 'error');
+    }
+}
+
+async function deleteActionSimplified(id) {
+    if (!state.user || state.user.role !== 'MASTER') {
+        showNotification('Acesso negado para excluir.', 'error');
+        return;
+    }
+
+    if (!confirm('Deseja realmente excluir este registro de ação permanentemente?')) return;
+
+    try {
+        const res = await fetch(`/api/line-events?id=${id}&userId=${state.user.id}`, {
+            method: 'DELETE'
+        });
+
+        if (res.ok) {
+            showNotification('Ação removida com sucesso!', 'success');
+            renderActionsTab();
+        } else {
+            const err = await res.text();
+            showNotification('Erro ao excluir: ' + err, 'error');
+        }
+    } catch (err) {
+        console.error('Delete Action Error:', err);
+        showNotification('Erro de conexão.', 'error');
+    }
+}
+
+window.editActionSimplified = editActionSimplified;
+window.deleteActionSimplified = deleteActionSimplified;
