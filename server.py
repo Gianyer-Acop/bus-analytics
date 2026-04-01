@@ -778,7 +778,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     query += f" AND (implementation_date BETWEEN {ph} AND {ph} OR implementation_date IS NULL OR implementation_date = '')"
                     sql_params.extend([start, end])
                 
-                query += " ORDER BY CASE WHEN implementation_date IS NULL OR implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(implementation_date, ''), created_at) DESC, created_at DESC"
+                query += " ORDER BY CASE WHEN implementation_date IS NULL OR implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(implementation_date, ''), CAST(created_at AS TEXT)) DESC, created_at DESC"
                 
                 c.execute(query, sql_params)
                 rows = c.fetchall()
@@ -1444,7 +1444,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 LEFT JOIN line_group_members m ON e.line_code = m.line_code
                 LEFT JOIN line_groups g ON m.group_id = g.id
                 WHERE (e.implementation_date BETWEEN {ph} AND {ph} OR e.implementation_date IS NULL OR e.implementation_date = '')
-                ORDER BY CASE WHEN e.implementation_date IS NULL OR e.implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(e.implementation_date, ''), e.created_at) DESC, e.created_at DESC
+                ORDER BY CASE WHEN e.implementation_date IS NULL OR e.implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(e.implementation_date, ''), CAST(e.created_at AS TEXT)) DESC, e.created_at DESC
             """
             c.execute(query, (start, end))
             rows = c.fetchall()
@@ -1548,7 +1548,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 query += f" AND line_code IN ({placeholders})"
                 args.extend(all_line_codes)
             
-            query += " ORDER BY CASE WHEN implementation_date IS NULL OR implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(implementation_date, ''), created_at) DESC, created_at DESC"
+            query += " ORDER BY CASE WHEN implementation_date IS NULL OR implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(implementation_date, ''), CAST(created_at AS TEXT)) DESC, created_at DESC"
             c.execute(query, tuple(args))
             actions = c.fetchall()
             
