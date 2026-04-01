@@ -328,11 +328,10 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 event_id = int(params.get('id', [0])[0])
                 user_id = int(params.get('userId', [0])[0])
 
-                conn = sqlite3.connect(DB_FILE)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
+                conn, c = get_db_connection()
+                ph = "%s" if DATABASE_URL else "?"
                 
-                c.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+                c.execute(f"SELECT role FROM users WHERE id = {ph}", (user_id,))
                 user = c.fetchone()
                 if not user or user['role'] != 'MASTER':
                     self.send_response(403)
@@ -342,7 +341,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 # Get filename to delete from disk
-                c.execute("SELECT filename FROM line_events WHERE id = ?", (event_id,))
+                c.execute(f"SELECT filename FROM line_events WHERE id = {ph}", (event_id,))
                 row = c.fetchone()
                 if row and row['filename']:
                     try:
@@ -351,7 +350,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                             os.remove(file_path)
                     except: pass
                 
-                c.execute("DELETE FROM line_events WHERE id = ?", (event_id,))
+                c.execute(f"DELETE FROM line_events WHERE id = {ph}", (event_id,))
                 conn.commit()
                 conn.close()
                 self.send_response(200)
@@ -608,12 +607,10 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(400, "Missing data")
                     return
                 
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
-                c.execute("""
-                    INSERT INTO line_actions (line_code, comment, implementation_date, author_id, analyst)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (line_code, comment, imp_date, author_id, analyst))
+                conn, c = get_db_connection()
+                ph = "%s" if DATABASE_URL else "?"
+                c.execute(f"INSERT INTO line_events (line_code, fact, implementation_date, author_id, analyst, type) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'ACTION')", 
+                          (line_code, comment, imp_date, author_id, analyst))
                 conn.commit()
                 conn.close()
                 
@@ -704,9 +701,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if path == '/api/groups':
             try:
-                conn = sqlite3.connect(DB_FILE)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
+                conn, c = get_db_connection()
+                ph = "%s" if DATABASE_URL else "?"
                 
                 # Fetch Groups
                 c.execute("SELECT * FROM line_groups")
@@ -714,7 +710,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Fetch Members
                 for g in groups:
-                    c.execute("SELECT line_code FROM line_group_members WHERE group_id = ?", (g['id'],))
+                    c.execute(f"SELECT line_code FROM line_group_members WHERE group_id = {ph}", (g['id'],))
                     g['lines'] = [row['line_code'] for row in c.fetchall()]
                 
                 conn.close()
@@ -736,10 +732,9 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(400, "Missing ID")
                     return
 
-                conn = sqlite3.connect(DB_FILE)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT filename, original_filename FROM line_events WHERE id = ?", (analysis_id,))
+                conn, c = get_db_connection()
+                ph = "%s" if DATABASE_URL else "?"
+                c.execute(f"SELECT filename, original_filename FROM line_events WHERE id = {ph}", (analysis_id,))
                 row = c.fetchone()
                 conn.close()
 
@@ -769,19 +764,18 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 start = params.get('start', [None])[0]
                 end = params.get('end', [None])[0]
                 
-                conn = sqlite3.connect(DB_FILE)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
+                conn, c = get_db_connection()
+                ph = "%s" if DATABASE_URL else "?"
                 
                 query = "SELECT * FROM line_events WHERE 1=1"
                 sql_params = []
                 
                 if line_code:
-                    query += " AND line_code = ?"
+                    query += f" AND line_code = {ph}"
                     sql_params.append(line_code)
                 
                 if start and end:
-                    query += " AND (implementation_date BETWEEN ? AND ? OR implementation_date IS NULL OR implementation_date = '')"
+                    query += f" AND (implementation_date BETWEEN {ph} AND {ph} OR implementation_date IS NULL OR implementation_date = '')"
                     sql_params.extend([start, end])
                 
                 query += " ORDER BY CASE WHEN implementation_date IS NULL OR implementation_date = '' THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(implementation_date, ''), created_at) DESC, created_at DESC"
