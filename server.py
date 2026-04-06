@@ -19,6 +19,10 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import unicodedata
 import pandas as pd
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente do arquivo .env (se existir)
+load_dotenv()
 
 PORT = int(os.environ.get('PORT', 8000))
 DATABASE_URL = os.environ.get('DATABASE_URL') # Neon.tech Connection String
