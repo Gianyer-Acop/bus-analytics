@@ -1,0 +1,970 @@
+[
+    {
+        "group_id": 2,
+        "line_code": "028"
+    },
+    {
+        "group_id": 2,
+        "line_code": "073"
+    },
+    {
+        "group_id": 2,
+        "line_code": "094"
+    },
+    {
+        "group_id": 2,
+        "line_code": "215"
+    },
+    {
+        "group_id": 2,
+        "line_code": "223"
+    },
+    {
+        "group_id": 2,
+        "line_code": "227"
+    },
+    {
+        "group_id": 2,
+        "line_code": "321"
+    },
+    {
+        "group_id": 2,
+        "line_code": "343"
+    },
+    {
+        "group_id": 2,
+        "line_code": "350"
+    },
+    {
+        "group_id": 2,
+        "line_code": "355"
+    },
+    {
+        "group_id": 2,
+        "line_code": "356"
+    },
+    {
+        "group_id": 2,
+        "line_code": "357"
+    },
+    {
+        "group_id": 2,
+        "line_code": "359"
+    },
+    {
+        "group_id": 2,
+        "line_code": "415"
+    },
+    {
+        "group_id": 2,
+        "line_code": "440"
+    },
+    {
+        "group_id": 2,
+        "line_code": "443"
+    },
+    {
+        "group_id": 2,
+        "line_code": "444"
+    },
+    {
+        "group_id": 2,
+        "line_code": "447"
+    },
+    {
+        "group_id": 2,
+        "line_code": "448"
+    },
+    {
+        "group_id": 2,
+        "line_code": "450"
+    },
+    {
+        "group_id": 2,
+        "line_code": "458"
+    },
+    {
+        "group_id": 2,
+        "line_code": "560"
+    },
+    {
+        "group_id": 2,
+        "line_code": "641"
+    },
+    {
+        "group_id": 2,
+        "line_code": "650"
+    },
+    {
+        "group_id": 2,
+        "line_code": "677"
+    },
+    {
+        "group_id": 2,
+        "line_code": "680"
+    },
+    {
+        "group_id": 2,
+        "line_code": "059"
+    },
+    {
+        "group_id": 3,
+        "line_code": "013"
+    },
+    {
+        "group_id": 3,
+        "line_code": "014"
+    },
+    {
+        "group_id": 3,
+        "line_code": "044"
+    },
+    {
+        "group_id": 3,
+        "line_code": "048"
+    },
+    {
+        "group_id": 3,
+        "line_code": "068"
+    },
+    {
+        "group_id": 3,
+        "line_code": "113"
+    },
+    {
+        "group_id": 3,
+        "line_code": "120"
+    },
+    {
+        "group_id": 3,
+        "line_code": "125"
+    },
+    {
+        "group_id": 3,
+        "line_code": "129"
+    },
+    {
+        "group_id": 3,
+        "line_code": "203"
+    },
+    {
+        "group_id": 3,
+        "line_code": "217"
+    },
+    {
+        "group_id": 3,
+        "line_code": "304"
+    },
+    {
+        "group_id": 3,
+        "line_code": "305"
+    },
+    {
+        "group_id": 3,
+        "line_code": "330"
+    },
+    {
+        "group_id": 3,
+        "line_code": "341"
+    },
+    {
+        "group_id": 3,
+        "line_code": "427"
+    },
+    {
+        "group_id": 3,
+        "line_code": "439"
+    },
+    {
+        "group_id": 3,
+        "line_code": "442"
+    },
+    {
+        "group_id": 3,
+        "line_code": "457"
+    },
+    {
+        "group_id": 3,
+        "line_code": "517"
+    },
+    {
+        "group_id": 3,
+        "line_code": "535"
+    },
+    {
+        "group_id": 3,
+        "line_code": "540"
+    },
+    {
+        "group_id": 3,
+        "line_code": "541"
+    },
+    {
+        "group_id": 3,
+        "line_code": "621"
+    },
+    {
+        "group_id": 3,
+        "line_code": "671"
+    },
+    {
+        "group_id": 3,
+        "line_code": "678"
+    },
+    {
+        "group_id": 3,
+        "line_code": "708"
+    },
+    {
+        "group_id": 3,
+        "line_code": "307"
+    },
+    {
+        "group_id": 3,
+        "line_code": "328"
+    },
+    {
+        "group_id": 4,
+        "line_code": "001"
+    },
+    {
+        "group_id": 4,
+        "line_code": "004"
+    },
+    {
+        "group_id": 4,
+        "line_code": "041"
+    },
+    {
+        "group_id": 4,
+        "line_code": "051"
+    },
+    {
+        "group_id": 4,
+        "line_code": "056"
+    },
+    {
+        "group_id": 4,
+        "line_code": "062"
+    },
+    {
+        "group_id": 4,
+        "line_code": "118"
+    },
+    {
+        "group_id": 4,
+        "line_code": "121"
+    },
+    {
+        "group_id": 4,
+        "line_code": "126"
+    },
+    {
+        "group_id": 4,
+        "line_code": "130"
+    },
+    {
+        "group_id": 4,
+        "line_code": "207"
+    },
+    {
+        "group_id": 4,
+        "line_code": "216"
+    },
+    {
+        "group_id": 4,
+        "line_code": "221"
+    },
+    {
+        "group_id": 4,
+        "line_code": "302"
+    },
+    {
+        "group_id": 4,
+        "line_code": "315"
+    },
+    {
+        "group_id": 4,
+        "line_code": "342"
+    },
+    {
+        "group_id": 4,
+        "line_code": "409"
+    },
+    {
+        "group_id": 4,
+        "line_code": "422"
+    },
+    {
+        "group_id": 4,
+        "line_code": "446"
+    },
+    {
+        "group_id": 4,
+        "line_code": "519"
+    },
+    {
+        "group_id": 4,
+        "line_code": "550"
+    },
+    {
+        "group_id": 4,
+        "line_code": "624"
+    },
+    {
+        "group_id": 4,
+        "line_code": "643"
+    },
+    {
+        "group_id": 4,
+        "line_code": "651"
+    },
+    {
+        "group_id": 4,
+        "line_code": "317"
+    },
+    {
+        "group_id": 4,
+        "line_code": "407"
+    },
+    {
+        "group_id": 5,
+        "line_code": "020"
+    },
+    {
+        "group_id": 5,
+        "line_code": "043"
+    },
+    {
+        "group_id": 5,
+        "line_code": "046"
+    },
+    {
+        "group_id": 5,
+        "line_code": "081"
+    },
+    {
+        "group_id": 5,
+        "line_code": "082"
+    },
+    {
+        "group_id": 5,
+        "line_code": "088"
+    },
+    {
+        "group_id": 5,
+        "line_code": "100"
+    },
+    {
+        "group_id": 5,
+        "line_code": "101"
+    },
+    {
+        "group_id": 5,
+        "line_code": "112"
+    },
+    {
+        "group_id": 5,
+        "line_code": "127"
+    },
+    {
+        "group_id": 5,
+        "line_code": "128"
+    },
+    {
+        "group_id": 5,
+        "line_code": "205"
+    },
+    {
+        "group_id": 5,
+        "line_code": "209"
+    },
+    {
+        "group_id": 5,
+        "line_code": "211"
+    },
+    {
+        "group_id": 5,
+        "line_code": "212"
+    },
+    {
+        "group_id": 5,
+        "line_code": "214"
+    },
+    {
+        "group_id": 5,
+        "line_code": "219"
+    },
+    {
+        "group_id": 5,
+        "line_code": "323"
+    },
+    {
+        "group_id": 5,
+        "line_code": "454"
+    },
+    {
+        "group_id": 5,
+        "line_code": "507"
+    },
+    {
+        "group_id": 5,
+        "line_code": "515"
+    },
+    {
+        "group_id": 5,
+        "line_code": "606"
+    },
+    {
+        "group_id": 5,
+        "line_code": "612"
+    },
+    {
+        "group_id": 5,
+        "line_code": "616"
+    },
+    {
+        "group_id": 5,
+        "line_code": "625"
+    },
+    {
+        "group_id": 5,
+        "line_code": "672"
+    },
+    {
+        "group_id": 5,
+        "line_code": "704"
+    },
+    {
+        "group_id": 5,
+        "line_code": "225"
+    },
+    {
+        "group_id": 5,
+        "line_code": "325"
+    },
+    {
+        "group_id": 6,
+        "line_code": "010"
+    },
+    {
+        "group_id": 6,
+        "line_code": "016"
+    },
+    {
+        "group_id": 6,
+        "line_code": "019"
+    },
+    {
+        "group_id": 6,
+        "line_code": "023"
+    },
+    {
+        "group_id": 6,
+        "line_code": "024"
+    },
+    {
+        "group_id": 6,
+        "line_code": "026"
+    },
+    {
+        "group_id": 6,
+        "line_code": "039"
+    },
+    {
+        "group_id": 6,
+        "line_code": "052"
+    },
+    {
+        "group_id": 6,
+        "line_code": "086"
+    },
+    {
+        "group_id": 6,
+        "line_code": "102"
+    },
+    {
+        "group_id": 6,
+        "line_code": "319"
+    },
+    {
+        "group_id": 6,
+        "line_code": "320"
+    },
+    {
+        "group_id": 6,
+        "line_code": "324"
+    },
+    {
+        "group_id": 6,
+        "line_code": "340"
+    },
+    {
+        "group_id": 6,
+        "line_code": "352"
+    },
+    {
+        "group_id": 6,
+        "line_code": "430"
+    },
+    {
+        "group_id": 6,
+        "line_code": "452"
+    },
+    {
+        "group_id": 6,
+        "line_code": "455"
+    },
+    {
+        "group_id": 6,
+        "line_code": "460"
+    },
+    {
+        "group_id": 6,
+        "line_code": "640"
+    },
+    {
+        "group_id": 6,
+        "line_code": "676"
+    },
+    {
+        "group_id": 6,
+        "line_code": "705"
+    },
+    {
+        "group_id": 6,
+        "line_code": "706"
+    },
+    {
+        "group_id": 6,
+        "line_code": "711"
+    },
+    {
+        "group_id": 6,
+        "line_code": "713"
+    },
+    {
+        "group_id": 6,
+        "line_code": "715"
+    },
+    {
+        "group_id": 6,
+        "line_code": "202"
+    },
+    {
+        "group_id": 6,
+        "line_code": "301"
+    },
+    {
+        "group_id": 6,
+        "line_code": "316"
+    },
+    {
+        "group_id": 6,
+        "line_code": "456"
+    },
+    {
+        "group_id": 7,
+        "line_code": "002"
+    },
+    {
+        "group_id": 7,
+        "line_code": "012"
+    },
+    {
+        "group_id": 7,
+        "line_code": "017"
+    },
+    {
+        "group_id": 7,
+        "line_code": "027"
+    },
+    {
+        "group_id": 7,
+        "line_code": "029"
+    },
+    {
+        "group_id": 7,
+        "line_code": "035"
+    },
+    {
+        "group_id": 7,
+        "line_code": "054"
+    },
+    {
+        "group_id": 7,
+        "line_code": "055"
+    },
+    {
+        "group_id": 7,
+        "line_code": "064"
+    },
+    {
+        "group_id": 7,
+        "line_code": "066"
+    },
+    {
+        "group_id": 7,
+        "line_code": "069"
+    },
+    {
+        "group_id": 7,
+        "line_code": "089"
+    },
+    {
+        "group_id": 7,
+        "line_code": "097"
+    },
+    {
+        "group_id": 7,
+        "line_code": "099"
+    },
+    {
+        "group_id": 7,
+        "line_code": "123"
+    },
+    {
+        "group_id": 7,
+        "line_code": "213"
+    },
+    {
+        "group_id": 7,
+        "line_code": "306"
+    },
+    {
+        "group_id": 7,
+        "line_code": "358"
+    },
+    {
+        "group_id": 7,
+        "line_code": "414"
+    },
+    {
+        "group_id": 7,
+        "line_code": "417"
+    },
+    {
+        "group_id": 7,
+        "line_code": "465"
+    },
+    {
+        "group_id": 7,
+        "line_code": "500"
+    },
+    {
+        "group_id": 7,
+        "line_code": "502"
+    },
+    {
+        "group_id": 7,
+        "line_code": "600"
+    },
+    {
+        "group_id": 7,
+        "line_code": "602"
+    },
+    {
+        "group_id": 7,
+        "line_code": "604"
+    },
+    {
+        "group_id": 7,
+        "line_code": "609"
+    },
+    {
+        "group_id": 7,
+        "line_code": "208"
+    },
+    {
+        "group_id": 7,
+        "line_code": "210"
+    },
+    {
+        "group_id": 7,
+        "line_code": "626"
+    },
+    {
+        "group_id": 8,
+        "line_code": "006"
+    },
+    {
+        "group_id": 8,
+        "line_code": "008"
+    },
+    {
+        "group_id": 8,
+        "line_code": "011"
+    },
+    {
+        "group_id": 8,
+        "line_code": "021"
+    },
+    {
+        "group_id": 8,
+        "line_code": "022"
+    },
+    {
+        "group_id": 8,
+        "line_code": "034"
+    },
+    {
+        "group_id": 8,
+        "line_code": "038"
+    },
+    {
+        "group_id": 8,
+        "line_code": "040"
+    },
+    {
+        "group_id": 8,
+        "line_code": "053"
+    },
+    {
+        "group_id": 8,
+        "line_code": "072"
+    },
+    {
+        "group_id": 8,
+        "line_code": "080"
+    },
+    {
+        "group_id": 8,
+        "line_code": "084"
+    },
+    {
+        "group_id": 8,
+        "line_code": "091"
+    },
+    {
+        "group_id": 8,
+        "line_code": "110"
+    },
+    {
+        "group_id": 8,
+        "line_code": "116"
+    },
+    {
+        "group_id": 8,
+        "line_code": "119"
+    },
+    {
+        "group_id": 8,
+        "line_code": "122"
+    },
+    {
+        "group_id": 8,
+        "line_code": "329"
+    },
+    {
+        "group_id": 8,
+        "line_code": "461"
+    },
+    {
+        "group_id": 8,
+        "line_code": "542"
+    },
+    {
+        "group_id": 8,
+        "line_code": "608"
+    },
+    {
+        "group_id": 8,
+        "line_code": "610"
+    },
+    {
+        "group_id": 8,
+        "line_code": "623"
+    },
+    {
+        "group_id": 8,
+        "line_code": "642"
+    },
+    {
+        "group_id": 8,
+        "line_code": "654"
+    },
+    {
+        "group_id": 8,
+        "line_code": "675"
+    },
+    {
+        "group_id": 8,
+        "line_code": "030"
+    },
+    {
+        "group_id": 8,
+        "line_code": "036"
+    },
+    {
+        "group_id": 8,
+        "line_code": "206"
+    },
+    {
+        "group_id": 9,
+        "line_code": "005"
+    },
+    {
+        "group_id": 9,
+        "line_code": "033"
+    },
+    {
+        "group_id": 9,
+        "line_code": "037"
+    },
+    {
+        "group_id": 9,
+        "line_code": "045"
+    },
+    {
+        "group_id": 9,
+        "line_code": "047"
+    },
+    {
+        "group_id": 9,
+        "line_code": "065"
+    },
+    {
+        "group_id": 9,
+        "line_code": "067"
+    },
+    {
+        "group_id": 9,
+        "line_code": "093"
+    },
+    {
+        "group_id": 9,
+        "line_code": "111"
+    },
+    {
+        "group_id": 9,
+        "line_code": "300"
+    },
+    {
+        "group_id": 9,
+        "line_code": "354"
+    },
+    {
+        "group_id": 9,
+        "line_code": "403"
+    },
+    {
+        "group_id": 9,
+        "line_code": "418"
+    },
+    {
+        "group_id": 9,
+        "line_code": "605"
+    },
+    {
+        "group_id": 9,
+        "line_code": "611"
+    },
+    {
+        "group_id": 9,
+        "line_code": "619"
+    },
+    {
+        "group_id": 9,
+        "line_code": "652"
+    },
+    {
+        "group_id": 9,
+        "line_code": "042"
+    },
+    {
+        "group_id": 9,
+        "line_code": "049"
+    },
+    {
+        "group_id": 9,
+        "line_code": "050"
+    },
+    {
+        "group_id": 9,
+        "line_code": "085"
+    },
+    {
+        "group_id": 9,
+        "line_code": "092"
+    },
+    {
+        "group_id": 9,
+        "line_code": "025"
+    },
+    {
+        "group_id": 9,
+        "line_code": "032"
+    },
+    {
+        "group_id": 9,
+        "line_code": "200"
+    },
+    {
+        "group_id": 9,
+        "line_code": "204"
+    },
+    {
+        "group_id": 9,
+        "line_code": "222"
+    },
+    {
+        "group_id": 9,
+        "line_code": "308"
+    },
+    {
+        "group_id": 9,
+        "line_code": "326"
+    },
+    {
+        "group_id": 9,
+        "line_code": "402"
+    },
+    {
+        "group_id": 10,
+        "line_code": "E1"
+    },
+    {
+        "group_id": 10,
+        "line_code": "T1"
+    },
+    {
+        "group_id": 10,
+        "line_code": "T4"
+    },
+    {
+        "group_id": 10,
+        "line_code": "T3"
+    },
+    {
+        "group_id": 10,
+        "line_code": "E3"
+    },
+    {
+        "group_id": 10,
+        "line_code": "T7"
+    },
+    {
+        "group_id": 10,
+        "line_code": "T5"
+    },
+    {
+        "group_id": 10,
+        "line_code": "E4"
+    },
+    {
+        "group_id": 10,
+        "line_code": "T2"
+    },
+    {
+        "group_id": 10,
+        "line_code": "E2"
+    },
+    {
+        "group_id": 2,
+        "line_code": "690"
+    },
+    {
+        "group_id": 9,
+        "line_code": "003"
+    }
+]

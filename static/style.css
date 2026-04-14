@@ -2454,3 +2454,114 @@ select.input-std option {
 .ms-search-input:focus {
     border-color: var(--primary-color);
 }
+
+/* Primary Glow Button */
+.btn.primary-glow {
+    background: linear-gradient(135deg, var(--primary-color), #4f46e5);
+    color: white;
+    border: none;
+    box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
+    transition: all 0.3s ease;
+}
+
+.btn.primary-glow:hover {
+    box-shadow: 0 0 25px rgba(37, 99, 235, 0.6);
+    transform: translateY(-2px);
+}
+
+/* Option Management Modal Styling */
+#option-mgmt-modal .modal-tabs {
+    display: flex;
+    gap: 10px;
+    padding: 15px 20px;
+    background: rgba(15, 23, 42, 0.4);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+#option-mgmt-modal .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    border-radius: 6px;
+}
+
+#option-mgmt-modal .tab-btn.active {
+    background: rgba(37, 99, 235, 0.2);
+    color: var(--primary-color);
+}
+
+#option-mgmt-modal .tab-btn:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+}
+
+.option-mgmt-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.option-mgmt-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(37, 99, 235, 0.3);
+}
+
+.option-mgmt-item .label {
+    font-size: 0.9rem;
+    color: var(--text-main);
+}
+
+.option-mgmt-item .actions {
+    display: flex;
+    gap: 8px;
+}
+
+.option-mgmt-item .btn-icon {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    font-size: 0.95rem; 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 90px; /* Garante espaço para o texto */
+}
+
+.option-mgmt-item .btn-icon.edit {
+    color: #60a5fa; /* Azul claro permanente */
+}
+
+.option-mgmt-item .btn-icon.delete {
+    color: #f87171; /* Vermelho claro permanente */
+}
+
+.option-mgmt-item .btn-icon:hover {
+    transform: scale(1.1);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.option-mgmt-item .btn-icon.delete:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.option-mgmt-item .btn-icon.edit:hover {
+    color: var(--primary-color);
+    background: rgba(37, 99, 235, 0.15);
+    border-color: rgba(37, 99, 235, 0.3);
+}

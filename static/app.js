@@ -8,7 +8,8 @@ const state = {
     lastActions: [],
     lastEvents: [],
     lastDetailData: [],
-    macroFilterGroupId: null
+    macroFilterGroupId: null,
+    operationalOptions: []
 };
 
 const APP_VERSION = "2.3.2";
@@ -108,8 +109,12 @@ function showDashboard() {
         document.querySelectorAll('.master-only').forEach(el => el.classList.remove('hidden'));
     }
 
-    fetchGroups();
-    fetchLines();
+    // Star fetches in parallel
+    Promise.all([
+        fetchGroups(),
+        fetchLines(),
+        fetchOperationalOptions()
+    ]).catch(err => console.error("Error in initial fetches:", err));
 }
 
 function setupEventListeners() {
@@ -206,6 +211,29 @@ function setupEventListeners() {
             handleNavigation();
         }
     }, 200);
+
+    // operational options management is handled via onclick in HTML
+
+    const closeMgmtBtn = document.getElementById('close-option-mgmt');
+    if (closeMgmtBtn) {
+        closeMgmtBtn.onclick = () => {
+            document.getElementById('option-mgmt-modal').classList.add('hidden');
+            document.body.classList.remove('modal-open');
+        };
+    }
+
+    const addOptionBtn = document.getElementById('btn-add-option');
+    if (addOptionBtn) {
+        addOptionBtn.onclick = handleAddOption;
+    }
+
+    document.querySelectorAll('#option-mgmt-modal .tab-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            document.querySelectorAll('#option-mgmt-modal .tab-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            renderOperationalOptions(e.target.dataset.type);
+        };
+    });
 
     // Operational Search
     setupOperationalSearch();
@@ -3101,6 +3129,7 @@ window.openActionRegistrationModal = function () {
     const modal = document.getElementById('action-reg-modal');
     if (modal) {
         modal.classList.remove('hidden');
+        populateDropdowns(); // Carrega opções dinâmicas
         populateRegGroupsDropdown();
         document.getElementById('action-reg-form').reset();
         document.getElementById('reg-event-id').value = '';
@@ -3289,6 +3318,8 @@ async function confirmClearData() {
 }
 async function editActionSimplified(id) {
     try {
+        await fetchOperationalOptions(); // Garante opções dinâmicas carregadas
+
         const res = await fetch('/api/line-events');
         const events = await res.json();
         const event = events.find(e => e.id === id);
@@ -3411,3 +3442,151 @@ async function deleteActionSimplified(id) {
 
 window.editActionSimplified = editActionSimplified;
 window.deleteActionSimplified = deleteActionSimplified;
+
+/* Operational Options Functions */
+async function fetchOperationalOptions() {
+    try {
+        const res = await fetch('/api/operational-options');
+        state.operationalOptions = await res.json();
+        populateDropdowns();
+    } catch (err) {
+        console.error('Error fetching operational options:', err);
+    }
+}
+window.fetchOperationalOptions = fetchOperationalOptions;
+
+function populateDropdowns() {
+    const factsList = document.getElementById('reg-fact-options-list');
+    const causesList = document.getElementById('reg-cause-options-list');
+    const actionsList = document.getElementById('reg-action-options-list');
+
+    if (!factsList || !causesList || !actionsList) return;
+
+    const facts = state.operationalOptions.filter(o => o.type === 'FACT').sort((a, b) => a.label.localeCompare(b.label));
+    const causes = state.operationalOptions.filter(o => o.type === 'CAUSE').sort((a, b) => a.label.localeCompare(b.label));
+    const actions = state.operationalOptions.filter(o => o.type === 'ACTION').sort((a, b) => a.label.localeCompare(b.label));
+
+    const searchHTML = (id) => `<div class="ms-search-container"><input type="text" class="ms-search-input" placeholder="Pesquisar..." onkeyup="filterMSOptions(this)"></div>`;
+
+    factsList.innerHTML = searchHTML('reg-fact-dropdown') + facts.map(f => `<div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')"><input type="checkbox"> <span>${f.label}</span></div>`).join('');
+    causesList.innerHTML = searchHTML('reg-cause-dropdown') + causes.map(c => `<div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')"><input type="checkbox"> <span>${c.label}</span></div>`).join('');
+    actionsList.innerHTML = searchHTML('reg-action-dropdown') + actions.map(a => `<div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')"><input type="checkbox"> <span>${a.label}</span></div>`).join('');
+}
+
+window.openOptionMgmtModal = function() {
+    if (!state.user || state.user.role !== 'MASTER') {
+        showNotification('Acesso negado.', 'error');
+        return;
+    }
+    const modal = document.getElementById('option-mgmt-modal');
+    if (!modal) return;
+    
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    const activeTab = document.querySelector('#option-mgmt-modal .tab-btn.active');
+    renderOperationalOptions(activeTab ? activeTab.dataset.type : 'FACT');
+}
+
+function renderOperationalOptions(type) {
+    const list = document.getElementById('options-management-list');
+    if (!list) return;
+
+    const options = state.operationalOptions.filter(o => o.type === type).sort((a, b) => a.label.localeCompare(b.label));
+
+    if (options.length === 0) {
+        list.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Nenhuma opção cadastrada para esta categoria.</div>';
+        return;
+    }
+
+    list.innerHTML = options.map(o => `
+        <div class="option-mgmt-item">
+            <span class="label">${o.label}</span>
+            <div class="actions">
+                <button class="btn-icon edit" onclick="handleEditOption(${o.id}, '${o.label.replace(/'/g, "\\'")}', '${type}')" title="Editar">
+                    <i class="fas fa-edit"></i>
+                    <span style="font-size: 0.7rem; font-weight: bold; margin-left: 5px;">EDITAR</span>
+                </button>
+                <button class="btn-icon delete" onclick="handleDeleteOption(${o.id}, '${type}')" title="Excluir">
+                    <i class="fas fa-trash"></i>
+                    <span style="font-size: 0.7rem; font-weight: bold; margin-left: 5px;">APAGAR</span>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function handleAddOption() {
+    const input = document.getElementById('new-option-label');
+    const label = input.value.trim();
+    if (!label) return;
+
+    const activeTab = document.querySelector('#option-mgmt-modal .tab-btn.active');
+    const type = activeTab.dataset.type;
+
+    try {
+        const res = await fetch('/api/operational-options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, label, userId: state.user.id })
+        });
+
+        if (res.ok) {
+            input.value = '';
+            await fetchOperationalOptions();
+            renderOperationalOptions(type);
+            showNotification('Opção adicionada!', 'success');
+        }
+    } catch (err) {
+        console.error(err);
+        showNotification('Erro ao adicionar.', 'error');
+    }
+}
+
+async function handleEditOption(id, oldLabel, type) {
+    const newLabel = prompt('Editar opção:', oldLabel);
+    if (!newLabel || newLabel.trim() === oldLabel) return;
+
+    try {
+        const res = await fetch('/api/operational-options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, label: newLabel.trim(), userId: state.user.id })
+        });
+
+        if (res.ok) {
+            await fetchOperationalOptions();
+            renderOperationalOptions(type);
+            showNotification('Opção atualizada!', 'success');
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function handleDeleteOption(id, type) {
+    if (!confirm('Deseja realmente excluir esta opção?')) return;
+
+    try {
+        const res = await fetch('/api/operational-options', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, userId: state.user.id })
+        });
+
+        if (res.ok) {
+            await fetchOperationalOptions();
+            renderOperationalOptions(type);
+            showNotification('Opção removida!', 'success');
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+// Global exports for onclick handlers
+window.handleEditOption = handleEditOption;
+window.handleDeleteOption = handleDeleteOption;
+// openOptionMgmtModal is already defined on window
+window.handleAddOption = handleAddOption;
+window.renderOperationalOptions = renderOperationalOptions;
+window.populateDropdowns = populateDropdowns;

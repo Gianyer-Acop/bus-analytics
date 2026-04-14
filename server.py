@@ -115,6 +115,14 @@ def init_db():
         cause TEXT
     )''')
 
+    # Operational Options Table (Dynamic)
+    c.execute(f'''CREATE TABLE IF NOT EXISTS operational_options (
+        id {'SERIAL PRIMARY KEY' if DATABASE_URL else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+        type TEXT NOT NULL, -- FACT, CAUSE, ACTION
+        label TEXT NOT NULL,
+        UNIQUE(type, label)
+    )''')
+
     # SQLite-specific migrations (skip if using PostgreSQL as migrate_to_postgres handles it)
     if not DATABASE_URL:
         # (Inside init_db, original migration code for SQLite follows...)
@@ -132,6 +140,47 @@ def init_db():
     else:
         print("Ensuring 'master' password is 'admin123'...")
         c.execute(f"UPDATE users SET password = {ph} WHERE username = {ph}", ('admin123', 'master'))
+
+    # Seed operational options if empty
+    c.execute("SELECT COUNT(*) FROM operational_options")
+    if c.fetchone()[0] == 0:
+        print("Seeding operational options...")
+        facts = ["Não atingiu a meta", "Pouca oferta na area", "Desvio na via", "Chuva", "Greve/paralização", "Mudança de tarifa"]
+        causes = [
+            "Acidente", "Ajuste da quilometragem morta", "Áreas não cobertas pelo transporte urbano", 
+            "Categoria inferior ao programado", "Cliente Migrou de linha", "Cliente saiu do sistema", 
+            "Desativação de polos geradores de demanda (escolas/ empresas/ lojas etc.)", 
+            "Desvios autorizados pela operação", "Desvio de projeção", "Equilíbrio financeiro entre as empresas", 
+            "Falha de transmissão", "Falta de operador", "Falta de veículo", "Linha com alto índice de assalto", 
+            "Linha com atraso", "Linha com espaçamento longo na frequência", "Linha sobreposta", 
+            "Não retorno das atividades em escolas/faculdade", "Operador não cumpre os horários planejados", 
+            "Piora na Linha Após Implementação de Bolsão", "Processamentos pendentes (UDP x COLLECTOR)", 
+            "Programação não atende plenamente a demanda", "Problemas mecânicos constantes", 
+            "Reclamações Via App Cadê meu ônibus", "Solicitação do IMMU", "Veículos em comboio", 
+            "Dia Atípico (Chuva/Cancelamento de Aulas/Eventos)", "Divergência no comportamento de passageiros"
+        ]
+        actions = [
+            "Ajuste conforme demanda", "Ajuste conforme solicitação do App cadê meu ônibus", 
+            "Ajuste por tempo de espera na frequência", "Ajuste por tempo insuficiente", 
+            "Ajuste de projeção", "Comunicar a operação referente aos problemas mecânicos", 
+            "Desmembramento do bolsão", "Informar o setor de fomento NFP", "Linha Nova", 
+            "Mudança de empresa", "Mudança de itinerário", "Mudança de terminal", 
+            "Mudança para linha expressa", "Não abonar a penalização por troca de categoria", 
+            "Notificar a garagem referente Adiantamento/Atraso operacional atípico", 
+            "Notificar a garagem devido a falta de operador", "Programação com acréscimo de veículo", 
+            "Programação com oferta de mais viagens", "Programação de férias", "Programação especial", 
+            "Programação feriado", "Programação passou a ser bolsão", "Programação ponto facultativo", 
+            "Realizar acompanhamento da linha", "Redimensionar a frota devido a Desativação de polos geradores de demanda (escolas/ empresas/ lojas etc.)", 
+            "Reportar dados pendente de processamento ao TI", "Retorno da escala padrão", 
+            "Retorno da linha com escala padrão", "Retorno da linha ao itinerário padrão", 
+            "Transferência de tabela", "Transformação de intermediário para parceirado", 
+            "Transformação de parceirado em TU", "Transformação de TU para parceirado", 
+            "Troca de categoria", "Troca de categoria por maior ao programado"
+        ]
+        
+        for f in facts: c.execute(f"INSERT INTO operational_options (type, label) VALUES ({ph}, {ph})", ('FACT', f))
+        for cs in causes: c.execute(f"INSERT INTO operational_options (type, label) VALUES ({ph}, {ph})", ('CAUSE', cs))
+        for a in actions: c.execute(f"INSERT INTO operational_options (type, label) VALUES ({ph}, {ph})", ('ACTION', a))
 
     conn.commit()
     conn.close()
@@ -253,6 +302,35 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(str(e).encode())
             return
 
+        if self.path == '/api/operational-options':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                data = json.loads(post_data)
+                option_id = data.get('id')
+                user_id = data.get('userId')
+
+                conn, c = get_db_connection()
+                ph = "%s" if DATABASE_URL else "?"
+                c.execute(f"SELECT role FROM users WHERE id = {ph}", (user_id,))
+                user = c.fetchone()
+                if not user or user['role'] != 'MASTER':
+                    self.send_response(403)
+                    self.end_headers()
+                    self.wfile.write(b'Forbidden')
+                    conn.close()
+                    return
+
+                c.execute(f"DELETE FROM operational_options WHERE id = {ph}", (option_id,))
+                conn.commit()
+                conn.close()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"success": true}')
+            except Exception as e:
+                self.send_error(500, str(e))
+            return
+
         if self.path.startswith('/api/analysis'):
             try:
                 from urllib.parse import urlparse, parse_qs
@@ -365,6 +443,41 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
     def do_POST(self):
+        if self.path == '/api/operational-options':
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                post_data = self.rfile.read(content_length).decode('utf-8')
+                data = json.loads(post_data)
+                
+                type_opt = data.get('type')
+                label = data.get('label')
+                opt_id = data.get('id') # If present, it's an EDIT
+                user_id = data.get('userId')
+
+                conn, c = get_db_connection()
+                ph = "%s" if DATABASE_URL else "?"
+                c.execute(f"SELECT role FROM users WHERE id = {ph}", (user_id,))
+                user = c.fetchone()
+                if not user or user['role'] != 'MASTER':
+                    self.send_response(403)
+                    self.end_headers()
+                    self.wfile.write(b'Forbidden')
+                    conn.close()
+                    return
+
+                if opt_id:
+                    c.execute(f"UPDATE operational_options SET label = {ph} WHERE id = {ph}", (label, opt_id))
+                else:
+                    c.execute(f"INSERT INTO operational_options (type, label) VALUES ({ph}, {ph})", (type_opt, label))
+                
+                conn.commit()
+                conn.close()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"success": true}')
+            except Exception as e:
+                self.send_error(500, str(e))
+            return
         print(f"DEBUG: do_POST Path='{self.path}'")
         if self.path.startswith('/api/clear-data'):
             try:
@@ -701,6 +814,20 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         
         print(f"DEBUG: INCOMING GET REQUEST Path='{path}'", file=sys.stderr)
         
+        if path == '/api/operational-options':
+            try:
+                conn, c = get_db_connection()
+                c.execute("SELECT * FROM operational_options")
+                rows = c.fetchall()
+                data = [dict(row) for row in rows]
+                conn.close()
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(data).encode())
+            except Exception as e:
+                self.send_error(500, str(e))
+            return
 
 
         if path == '/api/groups':

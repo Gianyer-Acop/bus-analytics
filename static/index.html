@@ -12,6 +12,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 
 <body>
@@ -97,6 +99,10 @@
 
                             <button id="btn-manage-groups" class="btn accent">
                                 GERENCIAR BLOCOS
+                            </button>
+
+                            <button id="btn-manage-options" class="btn primary-glow" onclick="openOptionMgmtModal()">
+                                GERENCIAR OPÇÕES
                             </button>
 
                             <button id="btn-open-clear-data" class="btn danger"
@@ -992,29 +998,12 @@
                                             <span class="ms-placeholder ms-selected-text">Selecionar Fato...</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </div>
-                                        <div class="ms-options-list">
+                                        <div class="ms-options-list" id="reg-fact-options-list">
                                             <div class="ms-search-container">
                                                 <input type="text" class="ms-search-input" placeholder="Pesquisar..."
                                                     onkeyup="filterMSOptions(this)">
                                             </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
-                                                <input type="checkbox"> <span>Não atingiu a meta</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
-                                                <input type="checkbox"> <span>Pouca oferta na area</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
-                                                <input type="checkbox"> <span>Desvio na via</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
-                                                <input type="checkbox"> <span>Chuva</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
-                                                <input type="checkbox"> <span>Greve/paralização</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-fact-dropdown')">
-                                                <input type="checkbox"> <span>Mudança de tarifa</span>
-                                            </div>
+                                            <!-- Populada dinamicamente via JS -->
                                         </div>
                                     </div>
                                 </div>
@@ -1025,104 +1014,12 @@
                                             <span class="ms-placeholder ms-selected-text">Selecionar Causa(s)...</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </div>
-                                        <div class="ms-options-list">
+                                        <div class="ms-options-list" id="reg-cause-options-list">
                                             <div class="ms-search-container">
                                                 <input type="text" class="ms-search-input" placeholder="Pesquisar..."
                                                     onkeyup="filterMSOptions(this)">
                                             </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Acidente</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Ajuste da quilometragem morta</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Áreas não cobertas pelo transporte
-                                                    urbano</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Categoria inferior ao programado</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Cliente Migrou de linha</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Cliente saiu do sistema</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Desativação de polos geradores de demanda
-                                                    (escolas/ empresas/ lojas etc.)</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Desvios autorizados pela operação</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Desvio de projeção</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Equilíbrio financeiro entre as
-                                                    empresas</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Falha de transmissão</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Falta de operador</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Falta de veículo</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Linha com alto índice de assalto</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Linha com atraso</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Linha com espaçamento longo na
-                                                    frequência</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Linha sobreposta</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Não retorno das atividades em
-                                                    escolas/faculdade</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Operador não cumpre os horários
-                                                    planejados</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Piora na Linha Após Implementação de
-                                                    Bolsão</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Processamentos pendentes (UDP x
-                                                    COLLECTOR)</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Programação não atende plenamente a
-                                                    demanda</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Problemas mecânicos constantes</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Reclamações Via App Cadê meu ônibus</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Solicitação do IMMU</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Veículos em comboio</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Dia Atípico (Chuva/Cancelamento de Aulas/Eventos)</span>
-                                            </div>
-                                            <div class="ms-option" onclick="toggleMSOption(this, 'reg-cause-dropdown')">
-                                                <input type="checkbox"> <span>Divergência no comportamento de passageiros</span>
-                                            </div>
+                                            <!-- Populada dinamicamente via JS -->
                                         </div>
                                     </div>
                                 </div>
@@ -1133,128 +1030,15 @@
                                 <label>Ação(ões) Tomada(s)</label>
                                 <div class="ms-dropdown drop-up" id="reg-action-dropdown">
                                     <div class="ms-select-box" onclick="toggleMSDropdown('reg-action-dropdown')">
-                                        <span class="ms-placeholder ms-selected-text">Selecionar Ação(ões)...</span>
+                                        <span class="ms-placeholder ms-selected-text">Selecionar Ações...</span>
                                         <i class="fas fa-chevron-down"></i>
                                     </div>
-                                    <div class="ms-options-list">
+                                    <div class="ms-options-list" id="reg-action-options-list">
                                         <div class="ms-search-container">
                                             <input type="text" class="ms-search-input" placeholder="Pesquisar..."
                                                 onkeyup="filterMSOptions(this)">
                                         </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Ajuste conforme demanda</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Ajuste conforme solicitação do App cadê meu
-                                                ônibus</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Ajuste por tempo de espera na
-                                                frequência</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Ajuste por tempo insuficiente</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Ajuste de projeção</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Comunicar a operação referente aos problemas
-                                                mecânicos</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Desmembramento do bolsão</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Informar o setor de fomento NFP</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Linha Nova</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Mudança de empresa</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Mudança de itinerário</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Mudança de terminal</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Mudança para linha expressa</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Não abonar a penalização por troca de
-                                                categoria</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Notificar a garagem referente
-                                                Adiantamento/Atraso operacional atípico</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Notificar a garagem devido a falta de operador</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Programação com acréscimo de veículo</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Programação com oferta de mais viagens</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Programação de férias</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Programação especial</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Programação feriado</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Programação passou a ser bolsão</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Programação ponto facultativo</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Realizar acompanhamento da linha</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Redimensionar a frota devido a Desativação de
-                                                polos geradores de demanda (escolas/ empresas/ lojas etc.)</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Reportar dados pendente de processamento ao
-                                                TI</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Retorno da escala padrão</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Retorno da linha com escala padrão</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Retorno da linha ao itinerário padrão</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Transferência de tabela</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Transformação de intermediário para
-                                                parceirado</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Transformação de parceirado em TU</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Transformação de TU para parceirado</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Troca de categoria</span>
-                                        </div>
-                                        <div class="ms-option" onclick="toggleMSOption(this, 'reg-action-dropdown')">
-                                            <input type="checkbox"> <span>Troca de categoria por maior ao
-                                                programado</span>
-                                        </div>
+                                        <!-- Populada dinamicamente via JS -->
                                     </div>
                                 </div>
                             </div>
@@ -1340,6 +1124,33 @@
                 <div style="margin-top: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                     <button class="btn secondary" onclick="closeClearDataModal()">CANCELAR</button>
                     <button class="btn danger" onclick="confirmClearData()">CONFIRMAR LIMPEZA</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Operational Options Management Modal -->
+    <div id="option-mgmt-modal" class="modal hidden">
+        <div class="glass-panel modal-content" style="max-width: 600px; height: 80vh; display: flex; flex-direction: column;">
+            <header class="modal-header">
+                <h2>Gerenciar Opções do Sistema</h2>
+                <button class="close-modal" id="close-option-mgmt">&times;</button>
+            </header>
+            
+            <div class="modal-tabs" style="display: flex; gap: 5px; padding: 10px 20px; background: rgba(0,0,0,0.2);">
+                <button class="tab-btn active" data-type="FACT">FATOS</button>
+                <button class="tab-btn" data-type="CAUSE">CAUSAS</button>
+                <button class="tab-btn" data-type="ACTION">AÇÕES</button>
+            </div>
+
+            <div class="modal-body" style="flex-grow: 1; overflow-y: auto; padding: 20px;">
+                <div class="add-option-row" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <input type="text" id="new-option-label" class="input-std" placeholder="Nova opção..." style="flex-grow: 1;">
+                    <button id="btn-add-option" class="btn primary-glow">ADICIONAR</button>
+                </div>
+                
+                <div id="options-management-list" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Lista de opções populada via JS -->
                 </div>
             </div>
         </div>
