@@ -21,6 +21,63 @@
         <!-- Notification Area -->
         <div id="notification-container"></div>
 
+        <!-- Sidebar / Drawer -->
+        <div id="sidebar-overlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
+        <aside id="app-sidebar">
+            <header class="sidebar-header">
+                <h2>MENU</h2>
+                <button class="btn text-only" onclick="toggleSidebar()" style="font-size: 1.2rem; padding: 5px;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </header>
+
+            <div class="sidebar-user-info">
+                <span class="role-badge" id="display-user-role">Analista</span>
+                <span class="user-name" id="display-username">Usuário</span>
+            </div>
+
+            <nav class="sidebar-nav hidden" style="display:none;">
+                <!-- Moving these back to top-nav -->
+            </nav>
+
+            <div class="master-only hidden sidebar-admin">
+                <h3>Administração</h3>
+                <label for="csv-upload" class="btn secondary">
+                    <i class="fas fa-file-import"></i> IMPORTAR REALIZADO
+                </label>
+                <input type="file" id="csv-upload" accept=".csv" hidden>
+
+                <label for="csv-predict" class="btn secondary">
+                    <i class="fas fa-file-invoice"></i> IMPORTAR PREVISTO
+                </label>
+                <input type="file" id="csv-predict" accept=".csv" hidden>
+
+                <button id="btn-manage-groups" class="btn accent">
+                    <i class="fas fa-layer-group"></i> GERENCIAR BLOCOS
+                </button>
+
+                <button id="btn-manage-options" class="btn primary-glow" onclick="openOptionMgmtModal()">
+                    <i class="fas fa-cog"></i> GERENCIAR OPÇÕES
+                </button>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px;">
+                    <button id="btn-open-clear-data" class="btn danger" style="padding: 10px 5px; font-size: 0.75rem;">
+                        LIMPAR PARCIAL
+                    </button>
+                    <button id="btn-clear-data" class="btn delete" onclick="handleClearData()"
+                        style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); padding: 10px 5px; font-size: 0.75rem;">
+                        LIMPAR TOTAL
+                    </button>
+                </div>
+            </div>
+
+            <footer class="sidebar-footer">
+                <button id="logout-btn" class="sidebar-tab" style="width: 100%; color: #ef4444;">
+                    <i class="fas fa-sign-out-alt"></i> SAIR DO SISTEMA
+                </button>
+            </footer>
+        </aside>
+
         <!-- Login View -->
         <section id="login-view" class="active">
             <div class="glass-panel login-box">
@@ -53,10 +110,9 @@
                     <button id="tab-impacto" class="main-tab" onclick="switchMainTab('impacto')">IMPACTO DAS
                         AÇÕES</button>
                 </nav>
-                <div class="user-info">
-                    <span id="display-username">Usuário</span>
-                    <button id="logout-btn" class="btn text-only">Sair</button>
-                </div>
+                <button class="sidebar-toggle" onclick="toggleSidebar()" title="Menu do Usuário">
+                    <i class="fas fa-user-circle"></i>
+                </button>
             </header>
 
             <main class="content">
@@ -86,34 +142,8 @@
                         </div>
 
                         <!-- Only visible to Master -->
-                        <div class="master-only hidden" style="display:flex; gap:10px;">
-                            <label for="csv-upload" class="btn secondary">
-                                IMPORTAR REALIZADO (CSV)
-                            </label>
-                            <input type="file" id="csv-upload" accept=".csv" hidden>
-
-                            <label for="csv-predict" class="btn secondary">
-                                IMPORTAR PREVISTO (CSV)
-                            </label>
-                            <input type="file" id="csv-predict" accept=".csv" hidden>
-
-                            <button id="btn-manage-groups" class="btn accent">
-                                GERENCIAR BLOCOS
-                            </button>
-
-                            <button id="btn-manage-options" class="btn primary-glow" onclick="openOptionMgmtModal()">
-                                GERENCIAR OPÇÕES
-                            </button>
-
-                            <button id="btn-open-clear-data" class="btn danger"
-                                style="padding: 10px 15px; font-size: 0.8rem;">
-                                LIMPAR DADOS
-                            </button>
-
-                            <button id="btn-clear-data" class="btn delete" onclick="handleClearData()"
-                                style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">
-                                LIMPAR DADOS
-                            </button>
+                        <div class="master-only-redundant hidden" style="display:none;">
+                            <!-- Removed from main toolbar to sidebar -->
                         </div>
                     </div>
                 </div>
@@ -348,9 +378,9 @@
                 <!-- NEW: Actions Tab Content -->
                 <div id="acoes-tab-content" class="tab-content hidden">
                     <div
-                        style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                        <button class="btn primary-glow" onclick="openActionRegistrationModal()">
-                            + REGISTRAR NOVA AÇÃO
+                        style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+                        <button class="btn primary-glow" onclick="openActionRegistrationModal()" style="padding: 12px 20px;">
+                            <i class="fas fa-plus-circle"></i> REGISTRAR NOVA AÇÃO
                         </button>
 
                         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -375,15 +405,33 @@
                         <table id="actions-history-table">
                             <thead>
                                 <tr>
-                                    <th>DATA CADASTRO</th>
-                                    <th>DATA AÇÃO</th>
-                                    <th>GRUPO</th>
-                                    <th>LINHA</th>
-                                    <th>FATO</th>
-                                    <th>CAUSA</th>
-                                    <th>AÇÃO</th>
-                                    <th>ANÁLISE</th>
-                                    <th>NOME</th>
+                                    <th onclick="sortActions('created_at')" style="cursor: pointer;" title="Ordenar por Data de Cadastro">
+                                        REGISTRO <i class="fas fa-sort" id="sort-icon-created_at"></i>
+                                    </th>
+                                    <th onclick="sortActions('implementation_date')" style="cursor: pointer;" title="Ordenar por Data da Ocorrência">
+                                        DATA AÇÃO <i class="fas fa-sort" id="sort-icon-implementation_date"></i>
+                                    </th>
+                                    <th onclick="sortActions('group_name')" style="cursor: pointer;" title="Ordenar por Grupo">
+                                        GRUPO <i class="fas fa-sort" id="sort-icon-group_name"></i>
+                                    </th>
+                                    <th onclick="sortActions('line_code')" style="cursor: pointer;" title="Ordenar por Linha">
+                                        LINHA <i class="fas fa-sort" id="sort-icon-line_code"></i>
+                                    </th>
+                                    <th onclick="sortActions('fact')" style="cursor: pointer;">
+                                        FATO <i class="fas fa-sort" id="sort-icon-fact"></i>
+                                    </th>
+                                    <th onclick="sortActions('cause')" style="cursor: pointer;">
+                                        CAUSA <i class="fas fa-sort" id="sort-icon-cause"></i>
+                                    </th>
+                                    <th onclick="sortActions('action_taken')" style="cursor: pointer;">
+                                        AÇÃO <i class="fas fa-sort" id="sort-icon-action_taken"></i>
+                                    </th>
+                                    <th onclick="sortActions('analysis_conclusion')" style="cursor: pointer;">
+                                        ANÁLISE <i class="fas fa-sort" id="sort-icon-analysis_conclusion"></i>
+                                    </th>
+                                    <th onclick="sortActions('analyst')" style="cursor: pointer;">
+                                        NOME <i class="fas fa-sort" id="sort-icon-analyst"></i>
+                                    </th>
                                     <th>GESTÃO</th>
                                 </tr>
                             </thead>

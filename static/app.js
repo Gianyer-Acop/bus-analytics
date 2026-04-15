@@ -6,6 +6,8 @@ const state = {
     groups: [],
     selectedGroupId: null,
     lastActions: [],
+    actionsCache: [], // New: Cache for Actions Tab
+    actionsSort: { col: 'implementation_date', dir: 'desc' }, // New: Sort state
     lastEvents: [],
     lastDetailData: [],
     macroFilterGroupId: null,
@@ -104,6 +106,12 @@ function showDashboard() {
     views.login.classList.add('hidden');
     views.dashboard.classList.remove('hidden');
     document.getElementById('display-username').textContent = state.user.username;
+    
+    // Set role badge in sidebar
+    const roleEl = document.getElementById('display-user-role');
+    if (roleEl) {
+        roleEl.textContent = state.user.role === 'MASTER' ? 'Administrador' : 'Analista';
+    }
 
     if (state.user.role === 'MASTER') {
         document.querySelectorAll('.master-only').forEach(el => el.classList.remove('hidden'));
@@ -469,8 +477,23 @@ async function exportGroupToExcel(e) {
 function switchMainTab(tab) {
     console.log(`[v${APP_VERSION}] switchMainTab requested:`, tab);
     window.location.hash = '#' + tab;
+    
+    // Close sidebar after navigation
+    const sidebar = document.getElementById('app-sidebar');
+    if (sidebar && sidebar.classList.contains('open')) {
+        toggleSidebar();
+    }
 }
 window.switchMainTab = switchMainTab;
+
+window.toggleSidebar = function() {
+    const sidebar = document.getElementById('app-sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar && overlay) {
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('open');
+    }
+};
 
 function applyView(tab) {
     console.log("DEBUG: applyView entering for:", tab);
@@ -509,30 +532,38 @@ function applyView(tab) {
         macroTab?.classList.add('active');
         macroContent?.classList.remove('hidden');
         if (title) title.textContent = 'Panorama Macro';
-        const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
-        if (globalToolbar) globalToolbar.style.display = 'flex';
+        const globalToolbar = document.querySelector('.toolbar');
+        const toolbarActions = document.querySelector('.toolbar .actions');
+        if (globalToolbar) globalToolbar.style.marginBottom = '30px'; // Restore margin
+        if (toolbarActions) toolbarActions.style.display = 'flex';
         renderMacroDashboard();
     } else if (tab === 'operacional') {
         operTab?.classList.add('active');
         operContent?.classList.remove('hidden');
         if (title) title.textContent = 'Visão Geral da Operação';
-        const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
-        if (globalToolbar) globalToolbar.style.display = 'flex';
+        const globalToolbar = document.querySelector('.toolbar');
+        const toolbarActions = document.querySelector('.toolbar .actions');
+        if (globalToolbar) globalToolbar.style.marginBottom = '30px'; // Restore margin
+        if (toolbarActions) toolbarActions.style.display = 'flex';
         if (searchContainer) searchContainer.classList.remove('hidden');
         renderGroups();
     } else if (tab === 'impacto') {
         impactTab?.classList.add('active');
         impactContent?.classList.remove('hidden');
         if (title) title.textContent = 'Relatórios de Impacto';
-        const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
-        if (globalToolbar) globalToolbar.style.display = 'none'; // Individual filters are used here
+        const globalToolbar = document.querySelector('.toolbar');
+        const toolbarActions = document.querySelector('.toolbar .actions');
+        if (globalToolbar) globalToolbar.style.marginBottom = '0px';
+        if (toolbarActions) toolbarActions.style.display = 'none'; 
         renderImpactPage();
     } else if (tab === 'acoes') {
         acoesTab?.classList.add('active');
         acoesContent?.classList.remove('hidden');
         if (title) title.textContent = 'Gestão de Ações';
-        const globalToolbar = document.querySelector('.toolbar .actions .filter-group');
-        if (globalToolbar) globalToolbar.style.display = 'none';
+        const globalToolbar = document.querySelector('.toolbar');
+        const toolbarActions = document.querySelector('.toolbar .actions');
+        if (globalToolbar) globalToolbar.style.marginBottom = '0px';
+        if (toolbarActions) toolbarActions.style.display = 'none';
 
         // Initialize action filters if empty
         const startInput = document.getElementById('actions-filter-start');
@@ -3028,36 +3059,112 @@ document.addEventListener('click', (e) => {
 
 /** --- NEW ACTIONS TAB LOGIC --- **/
 
-window.renderActionsTab = async function () {
+window.sortActions = function(col) {
+    // 3-state Cycle logic:
+    // 1st click on new column: DESC
+    // Same col, currently DESC: ASC
+    // Same col, currently ASC: NONE (reset)
+    
+    if (state.actionsSort.col !== col) {
+        state.actionsSort.col = col;
+        state.actionsSort.dir = 'desc';
+    } else {
+        if (state.actionsSort.dir === 'desc') {
+            state.actionsSort.dir = 'asc';
+        } else if (state.actionsSort.dir === 'asc') {
+            state.actionsSort.col = null;
+            state.actionsSort.dir = null;
+        } else {
+            state.actionsSort.dir = 'desc';
+        }
+    }
+    renderActionsTab(true); // true means use cache
+};
+
+window.renderActionsTab = async function (useCache = false) {
     const tableBody = document.querySelector('#actions-history-table tbody');
     if (!tableBody) return;
-    tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Carregando...</td></tr>';
+    
+    if (!useCache) {
+        tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Carregando...</td></tr>';
+    }
 
     const start = document.getElementById('actions-filter-start')?.value;
     const end = document.getElementById('actions-filter-end')?.value;
 
     try {
-        let url = '/api/line-events';
-        if (start && end) {
-            url += `?start=${start}&end=${end}`;
-        }
-        const res = await fetch(url);
-        const events = await res.json();
+        let events = [];
+        let groups = [];
 
-        // Fetch groups to map group_id or line to group name
-        const groupRes = await fetch('/api/groups');
-        const groups = await groupRes.json();
+        if (useCache && state.actionsCache.length > 0) {
+            events = state.actionsCache;
+            // We assume groups are already in state.groups
+            groups = state.groups;
+        } else {
+            let url = '/api/line-events';
+            if (start && end) {
+                url += `?start=${start}&end=${end}`;
+            }
+            const res = await fetch(url);
+            events = await res.json();
+            
+            // Map group name to each event and add originalIndex for sorting reset
+            const groupRes = await fetch('/api/groups');
+            groups = await groupRes.json();
+            
+            events = events.map((event, index) => {
+                const group = groups.find(g => g.lines && g.lines.includes(event.line_code)) || { name: '-' };
+                return { ...event, group_name: group.name, originalIndex: index };
+            });
+            
+            state.actionsCache = events;
+        }
+
+        // Apply sorting
+        let eventsToRender = [...events];
+        const { col, dir } = state.actionsSort;
+
+        if (col && dir) {
+            const multiplier = dir === 'asc' ? 1 : -1;
+            eventsToRender.sort((a, b) => {
+                let valA = a[col] || '';
+                let valB = b[col] || '';
+
+                if (col === 'implementation_date' || col === 'created_at') {
+                    return (new Date(valA) - new Date(valB)) * multiplier;
+                }
+                
+                if (typeof valA === 'string') {
+                    return valA.localeCompare(valB, undefined, { sensitivity: 'base', numeric: true }) * multiplier;
+                }
+                
+                return (valA < valB ? -1 : valA > valB ? 1 : 0) * multiplier;
+            });
+        } else {
+            // Restore original order (NONE state)
+            eventsToRender.sort((a, b) => a.originalIndex - b.originalIndex);
+        }
+
+        // Update Sort Icons
+        document.querySelectorAll('#actions-history-table th i').forEach(icon => {
+            icon.className = 'fas fa-sort'; // Reset all
+            icon.classList.remove('active-sort');
+        });
+        
+        if (col && dir) {
+            const activeIcon = document.getElementById(`sort-icon-${col}`);
+            if (activeIcon) {
+                activeIcon.className = `fas fa-sort-${dir === 'asc' ? 'up' : 'down'} active-sort`;
+            }
+        }
 
         const formatDBDate = (str) => {
             if (!str) return '-';
-            // If it's YYYY-MM-DD (possibly with time like YYYY-MM-DD HH:mm:ss)
-            // Strip anything after space or T
             const cleanStr = str.split(' ')[0].split('T')[0];
             if (cleanStr.includes('-') && cleanStr.split('-')[0].length === 4) {
                 const [y, m, d] = cleanStr.split('-');
                 return `${d}/${m}/${y}`;
             }
-            // Fallback for full ISO strings or already formatted strings
             const d = new Date(str);
             if (isNaN(d.getTime())) return str;
             const day = String(d.getDate()).padStart(2, '0');
@@ -3067,10 +3174,6 @@ window.renderActionsTab = async function () {
         };
 
         tableBody.innerHTML = events.map(event => {
-            const group = groups.find(g => g.lines && g.lines.includes(event.line_code)) || { name: '-' };
-            // Prioritize implementation_date (action date) and created_at (which we'll now override if sent manually)
-            // Wait, I should use the field I'm about to send: 'upload_date' or just keep it in 'created_at' on backend?
-            // Let's assume I'll send it as 'created_at' to reuse the column, or server.py will handle it.
             const regDate = formatDBDate(event.created_at);
             const actionDate = formatDBDate(event.implementation_date);
 
@@ -3078,24 +3181,24 @@ window.renderActionsTab = async function () {
                 <tr>
                     <td style="font-weight: 500; color: var(--text-muted);">${regDate}</td>
                     <td>${actionDate}</td>
-                    <td>${group.name}</td>
+                    <td>${event.group_name}</td>
                     <td>${event.line_code}</td>
                     <td>${event.fact || '-'}</td>
                     <td>${event.cause || '-'}</td>
                     <td>${event.action_taken || '-'}</td>
                     <td>
-                        <button class="btn text-only" onclick='openSummaryModal(${JSON.stringify(event.analysis_conclusion || "")})' style="font-size: 0.75rem; color: var(--primary-color);">
+                        <button class="btn text-only" onclick='openSummaryModal(${JSON.stringify(event.analysis_conclusion || "")})' style="font-size: 0.75rem; color: var(--primary-color); justify-content: center; width: 100%;">
                             VER ANÁLISE
                         </button>
                     </td>
                     <td>${event.analyst || '-'}</td>
                     <td>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="btn text-only" onclick="editActionSimplified(${event.id})" style="color: var(--primary-color); padding: 5px;">
-                                <i class="fas fa-edit"></i> EDITAR
+                        <div style="display: flex; gap: 8px; justify-content: center;">
+                            <button class="btn text-only" title="Editar" onclick="editActionSimplified(${event.id})" style="color: var(--primary-color); padding: 5px;">
+                                <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn text-only" onclick="deleteActionSimplified(${event.id})" style="color: #ef4444; padding: 5px;">
-                                <i class="fas fa-trash"></i> APAGAR
+                            <button class="btn text-only" title="Excluir" onclick="deleteActionSimplified(${event.id})" style="color: #ef4444; padding: 5px;">
+                                <i class="fas fa-trash"></i>
                             </button>
                         </div>
                     </td>
@@ -3499,7 +3602,7 @@ function renderOperationalOptions(type) {
     }
 
     list.innerHTML = options.map(o => `
-        <div class="option-mgmt-item">
+        <div class="option-mgmt-item" style="margin: 5px 0; display: flex; justify-content: space-between; align-items: center;">
             <span class="label">${o.label}</span>
             <div class="actions">
                 <button class="btn-icon edit" onclick="handleEditOption(${o.id}, '${o.label.replace(/'/g, "\\'")}', '${type}')" title="Editar">
